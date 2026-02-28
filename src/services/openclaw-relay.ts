@@ -10,6 +10,7 @@ const DEFAULT_PATH = '/webhook';
 const DEFAULT_OPENCLAW_BIN = 'openclaw';
 const DEFAULT_DEDUP_WINDOW_MS = 0;
 const DEFAULT_THROTTLE_MS = 0;
+const DEFAULT_TELEGRAM_RATE_LIMIT_MS = 30_000;
 
 const RELAYABLE_TYPES = new Set([
   'task.completed',
@@ -17,19 +18,38 @@ const RELAYABLE_TYPES = new Set([
   'mention.spawn_status_changed',
 ]);
 
+const TELEGRAM_RELAYABLE_TYPES = new Set([
+  'task.completed',
+  'task.failed',
+]);
+
 export interface RelayRuntimeConfig {
   sharedSecret: string;
   openclawBin: string;
   dedupWindowMs: number;
   throttleMs: number;
+  telegram: TelegramRuntimeConfig;
   now: () => number;
   executeOpenclaw: (text: string) => Promise<OpenclawCommandResult>;
   logLine: (line: string) => void;
 }
 
+export interface TelegramRuntimeConfig {
+  enabled: boolean;
+  chatId: string | null;
+  rateLimitMs: number;
+  sendMessage: (chatId: string, text: string) => Promise<TelegramSendResult>;
+}
+
 export interface OpenclawCommandResult {
   ok: boolean;
   exitCode: number | null;
+  error?: string;
+}
+
+export interface TelegramSendResult {
+  ok: boolean;
+  statusCode: number | null;
   error?: string;
 }
 
@@ -52,6 +72,7 @@ export interface RelayResult {
 interface RelayState {
   seenEventIds: Map<string, number>;
   lastTriggerAt: number;
+  lastTelegramAt: number;
 }
 
 type HiveEventLike = Pick<HiveEvent, 'id' | 'type' | 'payload'> & { timestamp?: number };
@@ -68,6 +89,30 @@ export function parseRelayServerConfigFromEnv(env = process.env): RelayServerCon
   const openclawBin = env.HIVE_RELAY_OPENCLAW_BIN || DEFAULT_OPENCLAW_BIN;
   const dedupWindowMs = parseNonNegativeInt(env.HIVE_RELAY_DEDUP_WINDOW_MS, DEFAULT_DEDUP_WINDOW_MS);
   const throttleMs = parseNonNegativeInt(env.HIVE_RELAY_THROTTLE_MS, DEFAULT_THROTTLE_MS);
+  const telegramEnabled = parseBoolean(env.HIVE_RELAY_TELEGRAM_ENABLED, false);
+  const telegramRateLimitMs = parseNonNegativeInt(env.HIVE_RELAY_TELEGRAM_RATE_LIMIT_MS, DEFAULT_TELEGRAM_RATE_LIMIT_MS);
+  let telegramChatId: string | null = null;
+  let telegramSender: (chatId: string, text: string) => Promise<TelegramSendResult> = async () => ({
+    ok: false,
+    statusCode: null,
+    error: 'telegram notifications disabled',
+  });
+
+  if (telegramEnabled) {
+    const telegramBotToken = env.HIVE_RELAY_TELEGRAM_BOT_TOKEN?.trim();
+    telegramChatId = env.HIVE_RELAY_TELEGRAM_CHAT_ID?.trim() || null;
+
+    if (!telegramBotToken) {
+      throw new Error('Missing HIVE_RELAY_TELEGRAM_BOT_TOKEN while HIVE_RELAY_TELEGRAM_ENABLED=true');
+    }
+
+    if (!telegramChatId) {
+      throw new Error('Missing HIVE_RELAY_TELEGRAM_CHAT_ID while HIVE_RELAY_TELEGRAM_ENABLED=true');
+    }
+
+    telegramSender = createTelegramSender(telegramBotToken);
+  }
+
   const relayLogger = createRelayLogger(env.HIVE_RELAY_LOG_PATH);
 
   const runtime: RelayRuntimeConfig = {
@@ -75,6 +120,12 @@ export function parseRelayServerConfigFromEnv(env = process.env): RelayServerCon
     openclawBin,
     dedupWindowMs,
     throttleMs,
+    telegram: {
+      enabled: telegramEnabled,
+      chatId: telegramChatId,
+      rateLimitMs: telegramRateLimitMs,
+      sendMessage: telegramSender,
+    },
     now: () => Date.now(),
     executeOpenclaw: createOpenclawExecutor(openclawBin),
     logLine: relayLogger,
@@ -132,6 +183,7 @@ export function createRelayHandler(config: RelayRuntimeConfig) {
   const state: RelayState = {
     seenEventIds: new Map(),
     lastTriggerAt: 0,
+    lastTelegramAt: 0,
   };
 
   return async (rawBody: string, signatureHeader: string | null): Promise<RelayResult> => {
@@ -144,14 +196,20 @@ export function createRelayHandler(config: RelayRuntimeConfig) {
     const finalize = (
       statusCode: number,
       body: RelayResult['body'],
-      commandResult: OpenclawCommandResult | null
+      commandResult: OpenclawCommandResult | null,
+      telegramResult: TelegramSendResult | null
     ): RelayResult => {
       const commandState = commandResult ? (commandResult.ok ? 'success' : 'failed') : 'skipped';
       const commandExit = commandResult ? (commandResult.exitCode === null ? 'null' : String(commandResult.exitCode)) : 'na';
+      const telegramState = telegramResult ? (telegramResult.ok ? 'sent' : 'failed') : 'skipped';
+      const telegramCode = telegramResult
+        ? (telegramResult.statusCode === null ? 'null' : String(telegramResult.statusCode))
+        : 'na';
       const reasonSuffix = body.reason ? ` reason=${safeLogValue(body.reason)}` : '';
+      const telegramReasonSuffix = telegramResult?.error ? ` telegramReason=${safeLogValue(telegramResult.error)}` : '';
 
       config.logLine(
-        `[hive-relay] eventId=${safeLogValue(eventId)} type=${safeLogValue(eventType)} timestamp=${safeLogValue(eventTimestamp)} signatureVerified=${signatureVerified} action=${body.action} command=${commandState} exitCode=${commandExit}${reasonSuffix}`
+        `[hive-relay] eventId=${safeLogValue(eventId)} type=${safeLogValue(eventType)} timestamp=${safeLogValue(eventTimestamp)} signatureVerified=${signatureVerified} action=${body.action} command=${commandState} exitCode=${commandExit} telegram=${telegramState} telegramCode=${telegramCode}${reasonSuffix}${telegramReasonSuffix}`
       );
 
       return { statusCode, body };
@@ -165,6 +223,7 @@ export function createRelayHandler(config: RelayRuntimeConfig) {
           action: 'ignored',
           reason: 'invalid signature',
         },
+        null,
         null
       );
     }
@@ -177,6 +236,7 @@ export function createRelayHandler(config: RelayRuntimeConfig) {
           action: 'ignored',
           reason: 'invalid event payload',
         },
+        null,
         null
       );
     }
@@ -189,6 +249,7 @@ export function createRelayHandler(config: RelayRuntimeConfig) {
           action: 'ignored',
           reason: 'event type not relayed',
         },
+        null,
         null
       );
     }
@@ -204,6 +265,7 @@ export function createRelayHandler(config: RelayRuntimeConfig) {
           action: 'duplicate',
           reason: 'event already processed',
         },
+        null,
         null
       );
     }
@@ -216,6 +278,7 @@ export function createRelayHandler(config: RelayRuntimeConfig) {
           action: 'throttled',
           reason: 'notification throttled',
         },
+        null,
         null
       );
     }
@@ -229,11 +292,14 @@ export function createRelayHandler(config: RelayRuntimeConfig) {
           action: 'ignored',
           reason: 'event type not relayed',
         },
+        null,
         null
       );
     }
 
     const commandResult = await config.executeOpenclaw(summary);
+    const telegramResult = await maybeSendTelegramNotification(config, state, parsed, now);
+
     if (!commandResult.ok) {
       return finalize(
         500,
@@ -242,7 +308,8 @@ export function createRelayHandler(config: RelayRuntimeConfig) {
           action: 'triggered',
           reason: commandResult.error || 'openclaw command failed',
         },
-        commandResult
+        commandResult,
+        telegramResult
       );
     }
 
@@ -254,7 +321,8 @@ export function createRelayHandler(config: RelayRuntimeConfig) {
         success: true,
         action: 'triggered',
       },
-      commandResult
+      commandResult,
+      telegramResult
     );
   };
 }
@@ -324,6 +392,23 @@ export function buildEventSummary(event: HiveEventLike): string | null {
   return null;
 }
 
+export function isTelegramRelayableEventType(eventType: string): boolean {
+  return TELEGRAM_RELAYABLE_TYPES.has(eventType);
+}
+
+export function buildTelegramEventMessage(event: HiveEventLike): string | null {
+  if (!isTelegramRelayableEventType(event.type)) return null;
+
+  const payload = asRecord(event.payload);
+  const status = event.type === 'task.completed' ? 'completed' : 'failed';
+  const summary = buildTelegramSummary(event, payload);
+  const summaryPart = summary ? ` summary=${summary}` : '';
+
+  return compact(
+    `Hive task update: task=${field(payload, 'taskId')} agent=${field(payload, 'agentId')} status=${status} room=${field(payload, 'roomId')}${summaryPart}`
+  );
+}
+
 function writeJson(res: ServerResponse, status: number, payload: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(payload));
@@ -388,6 +473,16 @@ function parseNonNegativeInt(rawValue: string | undefined, fallback: number): nu
   return parsed;
 }
 
+function parseBoolean(rawValue: string | undefined, fallback: boolean): boolean {
+  if (!rawValue) return fallback;
+
+  const normalized = rawValue.trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on') return true;
+  if (normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off') return false;
+
+  return fallback;
+}
+
 function normalizePath(path: string): string {
   if (path.startsWith('/')) return path;
   return `/${path}`;
@@ -396,6 +491,100 @@ function normalizePath(path: string): string {
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object') return {};
   return value as Record<string, unknown>;
+}
+
+async function maybeSendTelegramNotification(
+  config: RelayRuntimeConfig,
+  state: RelayState,
+  event: HiveEventLike,
+  now: number
+): Promise<TelegramSendResult | null> {
+  if (!config.telegram.enabled) return null;
+  if (!config.telegram.chatId) return null;
+  if (!isTelegramRelayableEventType(event.type)) return null;
+
+  if (config.telegram.rateLimitMs > 0 && now - state.lastTelegramAt < config.telegram.rateLimitMs) {
+    return null;
+  }
+
+  const message = buildTelegramEventMessage(event);
+  if (!message) return null;
+
+  const telegramResult = await config.telegram.sendMessage(config.telegram.chatId, message);
+  if (telegramResult.ok) {
+    state.lastTelegramAt = now;
+  }
+
+  return telegramResult;
+}
+
+function createTelegramSender(botToken: string): (chatId: string, text: string) => Promise<TelegramSendResult> {
+  const endpoint = `https://api.telegram.org/bot${botToken}/sendMessage`;
+
+  return async (chatId: string, text: string): Promise<TelegramSendResult> => {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          disable_web_page_preview: true,
+        }),
+      });
+
+      let apiDescription = '';
+      try {
+        const payload = (await response.json()) as { ok?: boolean; description?: string };
+        if (typeof payload.description === 'string') {
+          apiDescription = payload.description;
+        }
+
+        if (payload.ok === true) {
+          return {
+            ok: true,
+            statusCode: response.status,
+          };
+        }
+      } catch {
+        // Ignore JSON decode errors and fall through to generic error handling.
+      }
+
+      return {
+        ok: false,
+        statusCode: response.status,
+        error: apiDescription || `telegram send failed with status ${response.status}`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        statusCode: null,
+        error: error instanceof Error ? error.message : 'unknown telegram error',
+      };
+    }
+  };
+}
+
+function buildTelegramSummary(event: HiveEventLike, payload: Record<string, unknown>): string | null {
+  const candidates = ['summary', 'errorSummary', 'error', 'message', 'resultSummary'];
+
+  for (const key of candidates) {
+    const value = payload[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return shorten(value, 120);
+    }
+  }
+
+  if (event.type === 'task.failed') {
+    const exitCode = field(payload, 'exitCode');
+    if (exitCode !== 'unknown') {
+      return `exit ${exitCode}`;
+    }
+  }
+
+  return null;
 }
 
 function field(payload: Record<string, unknown>, key: string): string {
@@ -433,4 +622,10 @@ function compact(input: string): string {
   const normalized = input.replace(/\s+/g, ' ').trim();
   if (normalized.length <= 280) return normalized;
   return `${normalized.slice(0, 277)}...`;
+}
+
+function shorten(input: string, maxLength: number): string {
+  const normalized = input.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength - 3)}...`;
 }

@@ -4,7 +4,7 @@ const config = parseRelayServerConfigFromEnv();
 const server = startRelayServer(config);
 
 console.log(
-  `[relay] listening on http://${config.host}:${config.port}${config.path} (openclaw=${config.runtime.openclawBin})`
+  `[relay] listening on http://${config.host}:${config.port}${config.path} (openclaw=${config.runtime.openclawBin}, telegram=${config.runtime.telegram.enabled ? config.runtime.telegram.chatId : 'off'})`
 );
 
 for (const signal of ['SIGINT', 'SIGTERM']) {

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import {
   buildEventSummary,
+  buildTelegramEventMessage,
   createRelayHandler,
+  isTelegramRelayableEventType,
   verifyHiveSignature,
 } from '../src/services/openclaw-relay.js';
 
@@ -12,6 +14,15 @@ function sign(secret: string, body: string): string {
 
 function successResult() {
   return { ok: true, exitCode: 0 };
+}
+
+function disabledTelegramConfig() {
+  return {
+    enabled: false,
+    chatId: null,
+    rateLimitMs: 0,
+    sendMessage: async () => ({ ok: true, statusCode: 200 }),
+  };
 }
 
 describe('openclaw relay signature verification', () => {
@@ -36,6 +47,7 @@ describe('openclaw relay handling', () => {
       openclawBin: 'openclaw',
       dedupWindowMs: 0,
       throttleMs: 0,
+      telegram: disabledTelegramConfig(),
       now: () => 1_000,
       executeOpenclaw: async (text: string) => {
         calledWith.push(text);
@@ -72,6 +84,7 @@ describe('openclaw relay handling', () => {
       openclawBin: 'openclaw',
       dedupWindowMs: 0,
       throttleMs: 0,
+      telegram: disabledTelegramConfig(),
       now: () => 2_000,
       executeOpenclaw: async (text: string) => {
         calledWith.push(text);
@@ -104,6 +117,7 @@ describe('openclaw relay handling', () => {
       openclawBin: 'openclaw',
       dedupWindowMs: 60_000,
       throttleMs: 0,
+      telegram: disabledTelegramConfig(),
       now: () => 3_000,
       executeOpenclaw: async (text: string) => {
         calledWith.push(text);
@@ -143,6 +157,7 @@ describe('openclaw relay handling', () => {
       openclawBin: 'openclaw',
       dedupWindowMs: 0,
       throttleMs: 5_000,
+      telegram: disabledTelegramConfig(),
       now: () => currentTime,
       executeOpenclaw: async (text: string) => {
         calledWith.push(text);
@@ -191,6 +206,7 @@ describe('openclaw relay handling', () => {
       openclawBin: 'openclaw',
       dedupWindowMs: 0,
       throttleMs: 0,
+      telegram: disabledTelegramConfig(),
       now: () => 4_000,
       executeOpenclaw: async () => ({ ok: false, exitCode: 17, error: 'openclaw exited with code 17' }),
       logLine: (line: string) => logs.push(line),
@@ -219,6 +235,153 @@ describe('openclaw relay handling', () => {
     expect(logs[0]).toContain('action=triggered');
     expect(logs[0]).toContain('command=failed');
     expect(logs[0]).toContain('exitCode=17');
+    expect(logs[0]).toContain('telegram=skipped');
+    expect(logs[0]).toContain('telegramCode=na');
+  });
+
+  it('sends Telegram notifications for task events only', async () => {
+    const sentMessages: string[] = [];
+    const handler = createRelayHandler({
+      sharedSecret: 'relay-secret',
+      openclawBin: 'openclaw',
+      dedupWindowMs: 0,
+      throttleMs: 0,
+      telegram: {
+        enabled: true,
+        chatId: '123456',
+        rateLimitMs: 0,
+        sendMessage: async (_chatId: string, text: string) => {
+          sentMessages.push(text);
+          return { ok: true, statusCode: 200 };
+        },
+      },
+      now: () => 5_000,
+      executeOpenclaw: async () => successResult(),
+      logLine: () => {},
+    });
+
+    const completed = JSON.stringify({
+      id: 'event-task-completed',
+      type: 'task.completed',
+      timestamp: 1_700_000_000_008,
+      payload: {
+        taskId: 'mention-8',
+        agentId: 'builder',
+        roomId: 'room-delta',
+      },
+    });
+
+    const mentionStatusChanged = JSON.stringify({
+      id: 'event-mention',
+      type: 'mention.spawn_status_changed',
+      timestamp: 1_700_000_000_009,
+      payload: {
+        mentionId: 'mention-9',
+        fromStatus: 'running',
+        toStatus: 'completed',
+        agentId: 'builder',
+      },
+    });
+
+    const completedResult = await handler(completed, sign('relay-secret', completed));
+    const mentionResult = await handler(mentionStatusChanged, sign('relay-secret', mentionStatusChanged));
+
+    expect(completedResult.statusCode).toBe(202);
+    expect(mentionResult.statusCode).toBe(202);
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]).toContain('status=completed');
+  });
+
+  it('keeps relay successful when Telegram delivery fails', async () => {
+    const logs: string[] = [];
+    const handler = createRelayHandler({
+      sharedSecret: 'relay-secret',
+      openclawBin: 'openclaw',
+      dedupWindowMs: 0,
+      throttleMs: 0,
+      telegram: {
+        enabled: true,
+        chatId: '123456',
+        rateLimitMs: 0,
+        sendMessage: async () => ({ ok: false, statusCode: 500, error: 'telegram outage' }),
+      },
+      now: () => 6_000,
+      executeOpenclaw: async () => successResult(),
+      logLine: (line: string) => logs.push(line),
+    });
+
+    const event = JSON.stringify({
+      id: 'event-telegram-failure',
+      type: 'task.failed',
+      timestamp: 1_700_000_000_010,
+      payload: {
+        taskId: 'mention-10',
+        agentId: 'reviewer',
+        roomId: 'room-epsilon',
+        exitCode: 2,
+      },
+    });
+
+    const result = await handler(event, sign('relay-secret', event));
+
+    expect(result.statusCode).toBe(202);
+    expect(result.body.action).toBe('triggered');
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain('telegram=failed');
+    expect(logs[0]).toContain('telegramCode=500');
+  });
+
+  it('rate limits Telegram sends independently of OpenClaw wakeups', async () => {
+    let currentTime = 10_000;
+    const telegramMessages: string[] = [];
+    const handler = createRelayHandler({
+      sharedSecret: 'relay-secret',
+      openclawBin: 'openclaw',
+      dedupWindowMs: 0,
+      throttleMs: 0,
+      telegram: {
+        enabled: true,
+        chatId: '123456',
+        rateLimitMs: 5_000,
+        sendMessage: async (_chatId: string, text: string) => {
+          telegramMessages.push(text);
+          return { ok: true, statusCode: 200 };
+        },
+      },
+      now: () => currentTime,
+      executeOpenclaw: async () => successResult(),
+      logLine: () => {},
+    });
+
+    const eventA = JSON.stringify({
+      id: 'event-tg-a',
+      type: 'task.completed',
+      timestamp: 1_700_000_000_011,
+      payload: {
+        taskId: 'mention-11',
+        agentId: 'builder',
+        roomId: 'room-zeta',
+      },
+    });
+
+    const eventB = JSON.stringify({
+      id: 'event-tg-b',
+      type: 'task.failed',
+      timestamp: 1_700_000_000_012,
+      payload: {
+        taskId: 'mention-12',
+        agentId: 'builder',
+        roomId: 'room-zeta',
+        error: 'timeout waiting for dependency',
+      },
+    });
+
+    await handler(eventA, sign('relay-secret', eventA));
+    await handler(eventB, sign('relay-secret', eventB));
+    currentTime += 6_000;
+    await handler(eventB, sign('relay-secret', eventB));
+
+    expect(telegramMessages).toHaveLength(2);
   });
 });
 
@@ -238,5 +401,31 @@ describe('event summary formatting', () => {
 
     expect(summary).toContain('mention-6');
     expect(summary).toContain('running -> failed');
+  });
+
+  it('formats Telegram task notifications with core fields and summary', () => {
+    const summary = buildTelegramEventMessage({
+      id: 'event-7',
+      type: 'task.failed',
+      timestamp: 1_700_000_000_013,
+      payload: {
+        taskId: 'mention-13',
+        agentId: 'critic',
+        roomId: 'room-theta',
+        error: 'process crashed due to syntax error',
+      },
+    });
+
+    expect(summary).toContain('task=mention-13');
+    expect(summary).toContain('agent=critic');
+    expect(summary).toContain('status=failed');
+    expect(summary).toContain('room=room-theta');
+    expect(summary).toContain('summary=process crashed due to syntax error');
+  });
+
+  it('filters Telegram relay event types', () => {
+    expect(isTelegramRelayableEventType('task.completed')).toBe(true);
+    expect(isTelegramRelayableEventType('task.failed')).toBe(true);
+    expect(isTelegramRelayableEventType('mention.spawn_status_changed')).toBe(false);
   });
 });

@@ -241,6 +241,95 @@
 
     .api-list li { margin-bottom: 0.35rem; }
 
+    .demo-shell {
+      border: 1px solid var(--line);
+      border-radius: calc(var(--radius) + 2px);
+      background: linear-gradient(165deg, #ffffff, #f3f7fb);
+      box-shadow: 0 12px 30px rgba(17, 41, 59, 0.08);
+      padding: clamp(1rem, 3vw, 1.6rem);
+      display: grid;
+      gap: 1rem;
+    }
+
+    .demo-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .demo-field {
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    .demo-field label {
+      font-weight: 600;
+      color: #1c3a4d;
+      font-size: 0.94rem;
+    }
+
+    .demo-field input,
+    .demo-field select,
+    .demo-field textarea {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid #c8d4df;
+      background: #fff;
+      color: #132634;
+      font: inherit;
+      padding: 0.62rem 0.72rem;
+    }
+
+    .demo-field textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .demo-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.7rem;
+    }
+
+    .demo-status {
+      border-radius: 10px;
+      border: 1px solid #d2dce5;
+      background: #f9fbfd;
+      color: #1f394b;
+      padding: 0.7rem 0.85rem;
+      font-size: 0.95rem;
+    }
+
+    .demo-status.error {
+      border-color: #e7c4c4;
+      background: #fff5f5;
+      color: #7c1b1b;
+    }
+
+    .demo-status.ok {
+      border-color: #bcdac8;
+      background: #f1fbf4;
+      color: #1f5d34;
+    }
+
+    .demo-metadata {
+      margin: 0;
+      display: grid;
+      gap: 0.35rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .demo-metadata code {
+      color: #1b3447;
+      font-size: 0.88rem;
+    }
+
+    audio {
+      width: 100%;
+      margin-top: 0.2rem;
+    }
+
     .cta {
       text-align: center;
       background: linear-gradient(140deg, #0f5168, #0d4457);
@@ -270,7 +359,8 @@
     @media (max-width: 980px) {
       .hero-wrap,
       .grid,
-      .how {
+      .how,
+      .demo-grid {
         grid-template-columns: 1fr 1fr;
       }
       .hero-wrap > :first-child { grid-column: 1 / -1; }
@@ -282,7 +372,8 @@
       .hero { padding-top: 4rem; }
       .hero-wrap,
       .grid,
-      .how {
+      .how,
+      .demo-grid {
         grid-template-columns: 1fr;
       }
       .site-header { position: static; }
@@ -315,6 +406,7 @@
       <a class="brand" href="#top">Hive</a>
       <nav class="nav" aria-label="Primary">
         <a href="#features">Features</a>
+        <a href="#agent-talk-demo">Live demos</a>
         <a href="#how-it-works">How it works</a>
         <a href="#api-highlights">API highlights</a>
         <a href="#get-started">Get started</a>
@@ -397,6 +489,47 @@ GET /mentions?agentId=builder&unread=true</pre>
       </div>
     </section>
 
+    <section id="agent-talk-demo" aria-labelledby="demo-title">
+      <div class="container">
+        <h2 id="demo-title">Agent-talk voice demo</h2>
+        <p>Use the same <code>/proxy/elevenlabs/*</code> flow as production: load real voices, generate speech, and play the saved MP3 from HyperMicro storage.</p>
+
+        <div class="demo-shell" data-demo="agent-talk">
+          <div class="demo-grid">
+            <div class="demo-field">
+              <label for="voice-select">Voice</label>
+              <select id="voice-select" aria-describedby="voice-help" disabled>
+                <option>Load voices to begin</option>
+              </select>
+              <small id="voice-help" style="color: var(--muted);">Voices come from <code>GET /proxy/elevenlabs/v1/voices</code>.</small>
+            </div>
+
+            <div class="demo-field">
+              <label for="model-id">Model ID (optional)</label>
+              <input id="model-id" type="text" value="eleven_turbo_v2_5" placeholder="eleven_turbo_v2_5">
+            </div>
+          </div>
+
+          <div class="demo-field">
+            <label for="tts-input">Text to synthesize</label>
+            <textarea id="tts-input" maxlength="1000" placeholder="Say hello from Hive and prove the audio round-trip works.">Hello from Hive. This MP3 was synthesized through the ElevenLabs proxy and saved to HyperMicro.</textarea>
+          </div>
+
+          <div class="demo-actions">
+            <button class="btn btn-secondary" type="button" id="load-voices-btn">Load voices</button>
+            <button class="btn btn-primary" type="button" id="synthesize-btn" disabled>Generate + play MP3</button>
+          </div>
+
+          <p id="demo-status" class="demo-status" role="status" aria-live="polite">Ready. Load voices first.</p>
+
+          <div id="audio-output" hidden>
+            <audio id="tts-audio" controls preload="none"></audio>
+            <p class="demo-metadata"><span><strong>Storage key:</strong> <code id="storage-key">-</code></span><span><strong>Storage URL:</strong> <a id="storage-url" href="#" target="_blank" rel="noreferrer noopener">-</a></span><span><strong>Audio size:</strong> <span id="audio-size">-</span></span></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section id="api-highlights" aria-labelledby="api-title">
       <div class="container">
         <h2 id="api-title">API highlights</h2>
@@ -457,5 +590,179 @@ GET /mentions?agentId=builder&unread=true</pre>
       Hive is an open, local-first coordination layer for autonomous systems.
     </div>
   </footer>
+
+  <script>
+    (() => {
+      const voiceSelect = document.getElementById('voice-select');
+      const loadVoicesBtn = document.getElementById('load-voices-btn');
+      const synthBtn = document.getElementById('synthesize-btn');
+      const modelInput = document.getElementById('model-id');
+      const textInput = document.getElementById('tts-input');
+      const status = document.getElementById('demo-status');
+      const audioOutput = document.getElementById('audio-output');
+      const audioPlayer = document.getElementById('tts-audio');
+      const storageKeyEl = document.getElementById('storage-key');
+      const storageUrlEl = document.getElementById('storage-url');
+      const audioSizeEl = document.getElementById('audio-size');
+
+      let isLoadingVoices = false;
+      let isSynthesizing = false;
+
+      function setStatus(message, type) {
+        status.textContent = message;
+        status.className = 'demo-status';
+        if (type === 'error') status.classList.add('error');
+        if (type === 'ok') status.classList.add('ok');
+      }
+
+      function setButtons() {
+        loadVoicesBtn.disabled = isLoadingVoices || isSynthesizing;
+        const hasVoice = !!voiceSelect.value;
+        synthBtn.disabled = isLoadingVoices || isSynthesizing || !hasVoice;
+      }
+
+      function getAppSlug() {
+        const runtimeSlug = window.ONHYPER && typeof window.ONHYPER.appSlug === 'string'
+          ? window.ONHYPER.appSlug
+          : '';
+        return runtimeSlug || '';
+      }
+
+      async function parseResponse(response) {
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          return await response.json();
+        }
+        return { success: false, error: await response.text() };
+      }
+
+      function formatBytes(size) {
+        if (!Number.isFinite(size) || size <= 0) return 'Unknown';
+        if (size < 1024) return `${size} B`;
+        if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+        return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+      }
+
+      async function loadVoices() {
+        if (isLoadingVoices) return;
+
+        isLoadingVoices = true;
+        setButtons();
+        setStatus('Loading voices from ElevenLabs proxy...', '');
+
+        try {
+          const headers = { Accept: 'application/json' };
+          const appSlug = getAppSlug();
+          if (appSlug) headers['X-App-Slug'] = appSlug;
+
+          const response = await fetch('/proxy/elevenlabs/v1/voices', { headers });
+          const payload = await parseResponse(response);
+
+          if (!response.ok || !payload.success) {
+            throw new Error(payload.error || 'Voice fetch failed.');
+          }
+
+          const voices = Array.isArray(payload.data && payload.data.voices) ? payload.data.voices : [];
+          if (!voices.length) {
+            throw new Error('No voices returned from proxy.');
+          }
+
+          voiceSelect.innerHTML = '<option value="">Select a voice</option>';
+          voices.forEach((voice) => {
+            const id = typeof voice.voice_id === 'string' ? voice.voice_id : '';
+            if (!id) return;
+            const label = typeof voice.name === 'string' ? voice.name : id;
+            const option = document.createElement('option');
+            option.value = id;
+            option.textContent = `${label} (${id.slice(0, 8)}...)`;
+            voiceSelect.appendChild(option);
+          });
+
+          voiceSelect.disabled = false;
+          setStatus(`Loaded ${voiceSelect.options.length - 1} voices.`, 'ok');
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : 'Failed to load voices.', 'error');
+        } finally {
+          isLoadingVoices = false;
+          setButtons();
+        }
+      }
+
+      async function synthesize() {
+        if (isSynthesizing) return;
+
+        const voiceId = voiceSelect.value;
+        const text = textInput.value.trim();
+        if (!voiceId) {
+          setStatus('Pick a voice before generating audio.', 'error');
+          return;
+        }
+        if (!text) {
+          setStatus('Text is required to generate speech.', 'error');
+          return;
+        }
+
+        isSynthesizing = true;
+        setButtons();
+        setStatus('Generating speech and saving MP3 to HyperMicro...', '');
+
+        try {
+          const headers = {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+          };
+          const appSlug = getAppSlug();
+          if (appSlug) headers['X-App-Slug'] = appSlug;
+
+          const body = { text };
+          const modelId = modelInput.value.trim();
+          if (modelId) body.modelId = modelId;
+
+          const response = await fetch(`/proxy/elevenlabs/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+          });
+
+          const payload = await parseResponse(response);
+          if (!response.ok || !payload.success || !payload.data) {
+            throw new Error(payload.error || 'TTS generation failed.');
+          }
+
+          const asset = payload.data;
+          if (typeof asset.storageKey !== 'string' || !asset.storageKey.length) {
+            throw new Error('Proxy response missing storage key.');
+          }
+
+          if (typeof asset.storageUrl !== 'string' || !asset.storageUrl.length) {
+            throw new Error('Audio saved but no storage URL returned for playback.');
+          }
+
+          storageKeyEl.textContent = asset.storageKey;
+          storageUrlEl.href = asset.storageUrl;
+          storageUrlEl.textContent = asset.storageUrl;
+          audioSizeEl.textContent = `${formatBytes(asset.size)} (${asset.contentType || 'unknown'})`;
+
+          audioPlayer.src = asset.storageUrl;
+          audioPlayer.load();
+          audioOutput.hidden = false;
+
+          setStatus('Success: MP3 generated, stored in HyperMicro, and ready to play.', 'ok');
+        } catch (error) {
+          audioOutput.hidden = true;
+          audioPlayer.removeAttribute('src');
+          setStatus(error instanceof Error ? error.message : 'TTS request failed.', 'error');
+        } finally {
+          isSynthesizing = false;
+          setButtons();
+        }
+      }
+
+      loadVoicesBtn.addEventListener('click', loadVoices);
+      synthBtn.addEventListener('click', synthesize);
+      voiceSelect.addEventListener('change', setButtons);
+      setButtons();
+    })();
+  </script>
 </body>
 </html>
