@@ -147,6 +147,50 @@ export interface Mention {
 }
 
 // ============================================================================
+// Event + Webhook Notification Types
+// ============================================================================
+
+export type HiveEventType =
+  | 'task.started'
+  | 'task.progress'
+  | 'task.completed'
+  | 'task.failed'
+  | 'mention.spawn_status_changed';
+
+export interface HiveEvent<TPayload = Record<string, unknown>> {
+  id: string;
+  type: HiveEventType;
+  timestamp: number;
+  source: string;
+  payload: TPayload;
+}
+
+export interface WebhookSubscription {
+  id: string;
+  name?: string;
+  url: string;
+  eventTypes: HiveEventType[];
+  secret: string;
+  timeoutMs: number;
+  maxRetries: number;
+  active: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ElevenLabsAudioAsset {
+  id: string;
+  voiceId: string;
+  textHash: string;
+  timestamp: number;
+  size: number;
+  contentType: string;
+  storageKey: string;
+  storageUrl?: string;
+  createdAt: number;
+}
+
+// ============================================================================
 // API Response Types
 // ============================================================================
 

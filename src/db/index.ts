@@ -72,6 +72,18 @@ export const mentionKey = (id: string) => `mention!${id}`;
 export const mentionsByAgentKey = (agentId: string) => `mentions!agent!${agentId}`;
 export const mentionsByRoomKey = (roomId: string) => `mentions!room!${roomId}`;
 
+// Event keys
+export const eventKey = (id: string) => `event!${id}`;
+export const eventsListKey = () => 'events!list';
+
+// Webhook subscription keys
+export const webhookSubKey = (id: string) => `webhook!${id}`;
+export const webhookSubsListKey = () => 'webhooks!list';
+
+// Audio asset keys (ElevenLabs -> HyperMicro proxy)
+export const audioAssetKey = (id: string) => `audio!${id}`;
+export const audioAssetsListKey = () => 'audios!list';
+
 // ============================================================================
 // ID Generation
 // ============================================================================

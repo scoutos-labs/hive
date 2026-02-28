@@ -3,6 +3,7 @@
  * 
  * Spawns agents when they are mentioned in posts.
  * Captures output and updates mention records.
+ * Creates response posts that can trigger mention chains.
  */
 
 import { spawn } from 'child_process';
@@ -11,13 +12,59 @@ import {
   agentKey, 
   subKey, 
   mentionKey, 
-  mentionsByAgentKey, 
-  mentionsByRoomKey, 
+  mentionsByAgentKey,
+  mentionsByRoomKey,
+  postKey,
+  postsByRoomKey,
   generateId, 
   addToSet, 
   getList 
 } from '../db/index.js';
 import type { Agent, Mention, Room, Post } from '../types.js';
+import { emitHiveEvent } from './events.js';
+
+// ============================================================================
+// Create a post from agent output (triggers mention chain)
+// ============================================================================
+
+async function createAgentResponsePost(
+  room: Room,
+  authorId: string,
+  output: string,
+  replyToPostId?: string
+): Promise<Post> {
+  // Create post directly in database
+  const postId = generateId('post');
+  
+  // Extract mentions from output
+  const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
+  const mentions: string[] = [];
+  let match;
+  while ((match = mentionRegex.exec(output)) !== null) {
+    mentions.push(match[1]);
+  }
+  
+  const post: Post = {
+    id: postId,
+    roomId: room.id,
+    authorId,
+    content: output.trim(),
+    mentions,
+    createdAt: Date.now(),
+    replyTo: replyToPostId,
+  };
+  
+  // Store post
+  await db.put(postKey(postId), post);
+  await addToSet(postsByRoomKey(room.id), postId);
+  
+  console.log(`[spawn] Created agent response post ${postId} with mentions: ${mentions.join(', ')}`);
+  
+  // Process mentions in this post (triggers spawn chain)
+  await processMentions(post, room);
+  
+  return post;
+}
 
 // ============================================================================
 // Check if agent is subscribed to a room
@@ -68,6 +115,19 @@ export async function createMention(
   await db.put(mentionKey(mentionId), mention);
   await addToSet(mentionsByAgentKey(mentionedAgentId), mentionId);
   await addToSet(mentionsByRoomKey(roomId), mentionId);
+
+  await emitHiveEvent(
+    'mention.spawn_status_changed',
+    {
+      mentionId,
+      agentId: mentionedAgentId,
+      roomId,
+      postId,
+      fromStatus: null,
+      toStatus: 'pending',
+    },
+    'spawn:createMention'
+  );
   
   return mention;
 }
@@ -84,6 +144,7 @@ export async function updateMentionStatus(
 ): Promise<void> {
   const mention = await db.get(mentionKey(mentionId)) as Mention | undefined;
   if (!mention) return;
+  const previousStatus = mention.spawnStatus || 'pending';
   
   mention.spawnStatus = status;
   if (output) mention.spawnOutput = output;
@@ -93,6 +154,21 @@ export async function updateMentionStatus(
   }
   
   await db.put(mentionKey(mentionId), mention);
+
+  if (previousStatus !== status) {
+    await emitHiveEvent(
+      'mention.spawn_status_changed',
+      {
+        mentionId: mention.id,
+        agentId: mention.mentionedAgentId || mention.agentId,
+        roomId: mention.roomId,
+        postId: mention.postId,
+        fromStatus: previousStatus,
+        toStatus: status,
+      },
+      'spawn:updateMentionStatus'
+    );
+  }
 }
 
 // ============================================================================
@@ -133,6 +209,17 @@ export async function spawnAgent(
   
   // Update status to running
   await updateMentionStatus(mention.id, 'running');
+  await emitHiveEvent(
+    'task.started',
+    {
+      taskId: mention.id,
+      mentionId: mention.id,
+      agentId,
+      roomId: room.id,
+      postId: post.id,
+    },
+    'spawn:spawnAgent'
+  );
   
   try {
     // Spawn with pipes to capture output
@@ -151,11 +238,37 @@ export async function spawnAgent(
       stdout += data.toString();
       // Log in real-time for debugging
       console.log(`[spawn:${agentId}:out] ${data.toString().slice(0, 200)}...`);
+      void emitHiveEvent(
+        'task.progress',
+        {
+          taskId: mention.id,
+          mentionId: mention.id,
+          agentId,
+          roomId: room.id,
+          postId: post.id,
+          stream: 'stdout',
+          chunk: data.toString().slice(0, 1000),
+        },
+        'spawn:stdout'
+      );
     });
     
     child.stderr?.on('data', (data) => {
       stderr += data.toString();
       console.error(`[spawn:${agentId}:err] ${data.toString().slice(0, 200)}...`);
+      void emitHiveEvent(
+        'task.progress',
+        {
+          taskId: mention.id,
+          mentionId: mention.id,
+          agentId,
+          roomId: room.id,
+          postId: post.id,
+          stream: 'stderr',
+          chunk: data.toString().slice(0, 1000),
+        },
+        'spawn:stderr'
+      );
     });
     
     // Handle completion
@@ -167,9 +280,48 @@ export async function spawnAgent(
       if (success) {
         console.log(`[spawn] Agent ${agentId} completed successfully (PID: ${child.pid})`);
         await updateMentionStatus(mention.id, 'completed', output, undefined);
+        
+        // Check for @mentions in output - if found, create a post (triggers chain)
+        const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
+        const hasMentions = mentionRegex.test(stdout);
+        let responsePostId: string | undefined;
+        
+        if (hasMentions) {
+          console.log(`[spawn] Output contains mentions, creating response post`);
+          const responsePost = await createAgentResponsePost(room, agentId, stdout, post.id);
+          responsePostId = responsePost.id;
+        }
+
+        await emitHiveEvent(
+          'task.completed',
+          {
+            taskId: mention.id,
+            mentionId: mention.id,
+            agentId,
+            roomId: room.id,
+            postId: post.id,
+            exitCode: code,
+            outputLength: stdout.length,
+            responsePostId,
+          },
+          'spawn:close'
+        );
       } else {
         console.error(`[spawn] Agent ${agentId} failed with code ${code}`);
         await updateMentionStatus(mention.id, 'failed', output, error);
+        await emitHiveEvent(
+          'task.failed',
+          {
+            taskId: mention.id,
+            mentionId: mention.id,
+            agentId,
+            roomId: room.id,
+            postId: post.id,
+            exitCode: code,
+            error,
+          },
+          'spawn:close'
+        );
       }
       
       console.log(`[spawn] Output length: ${stdout.length} chars`);
@@ -178,6 +330,18 @@ export async function spawnAgent(
     child.on('error', async (err) => {
       console.error(`[spawn] Failed to spawn agent ${agentId}:`, err.message);
       await updateMentionStatus(mention.id, 'failed', undefined, err.message);
+      await emitHiveEvent(
+        'task.failed',
+        {
+          taskId: mention.id,
+          mentionId: mention.id,
+          agentId,
+          roomId: room.id,
+          postId: post.id,
+          error: err.message,
+        },
+        'spawn:error'
+      );
     });
     
     // Store PID
@@ -192,6 +356,18 @@ export async function spawnAgent(
   } catch (err) {
     console.error(`[spawn] Error spawning agent ${agentId}:`, err);
     await updateMentionStatus(mention.id, 'failed', undefined, String(err));
+    await emitHiveEvent(
+      'task.failed',
+      {
+        taskId: mention.id,
+        mentionId: mention.id,
+        agentId,
+        roomId: room.id,
+        postId: post.id,
+        error: String(err),
+      },
+      'spawn:exception'
+    );
   }
 }
 

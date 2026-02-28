@@ -6,10 +6,13 @@
   "scripts": {
     "dev": "bun run --hot src/index.ts",
     "start": "bun run src/index.ts",
+    "relay:openclaw": "bun run scripts/hive-openclaw-relay.ts",
+    "test": "bun test",
     "build": "bun build src/index.ts --compile --outfile hive-server",
     "build:linux": "bun build src/index.ts --compile --target linux-x64 --outfile hive-server-linux",
     "build:macos": "bun build src/index.ts --compile --target darwin-arm64 --outfile hive-server-macos",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "tasks:migrate": "bun run scripts/migrate-activity-to-hive.ts"
   },
   "dependencies": {
     "hono": "^4.7.0",
