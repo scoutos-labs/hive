@@ -85,6 +85,10 @@ export const eventsListKey = () => 'events!list';
 export const webhookSubKey = (id: string) => `webhook!${id}`;
 export const webhookSubsListKey = () => 'webhooks!list';
 
+// Webhook delivery keys
+export const webhookDeliveryKey = (id: string) => `webhookDelivery!${id}`;
+export const webhookDeliveriesListKey = () => 'webhookDeliveries!list';
+
 // Audio asset keys (ElevenLabs -> HyperMicro proxy)
 export const audioAssetKey = (id: string) => `audio!${id}`;
 export const audioAssetsListKey = () => 'audios!list';
@@ -151,12 +155,7 @@ export async function closeDatabase(): Promise<void> {
   await closePromise;
 }
 
-process.on('SIGINT', async () => {
-  await closeDatabase();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  await closeDatabase();
-  process.exit(0);
-});
+// NOTE: Signal handlers are registered in src/index.ts to avoid duplicate
+// registrations that can cause double-close races. closeDatabase() is
+// idempotent if called more than once, but registering handlers here
+// leads to multiple process.exit() calls racing on shutdown.
