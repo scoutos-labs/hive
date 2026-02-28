@@ -1,0 +1,7 @@
+node_modules/
+data/
+*.db
+*.lmdb
+hive-server
+dist/
+.DS_Store

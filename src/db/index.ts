@@ -1,0 +1,129 @@
+/**
+ * Hive - LMDB Database Setup
+ * 
+ * Key patterns documented in README.md
+ */
+
+import { open, Database } from 'lmdb';
+
+// ============================================================================
+// Database Connection
+// ============================================================================
+
+const DB_PATH = process.env.HIVE_DB_PATH || './data/hive.db';
+
+// Use any for flexibility - LMDB typing with complex schemas is challenging
+export const db = open<any, any>({
+  path: DB_PATH,
+  compression: true,
+});
+
+// ============================================================================
+// Key Pattern Utilities
+// ============================================================================
+
+/**
+ * LMDB Key Patterns:
+ * 
+ * Rooms:
+ *   room!{roomId}              -> Room object
+ *   rooms!list                 -> string[] of all room ids
+ * 
+ * Posts:
+ *   post!{postId}              -> Post object
+ *   posts!room!{roomId}        -> string[] of post ids in room (sorted by time)
+ *   posts!agent!{agentId}      -> string[] of post ids by agent
+ * 
+ * Agents:
+ *   agent!{agentId}            -> Agent object
+ *   agents!list                -> string[] of all agent ids
+ * 
+ * Subscriptions:
+ *   sub!{subId}                -> Subscription object
+ *   subs!agent!{agentId}       -> string[] of subscription ids for agent
+ *   subs!target!{type}!{id}    -> string[] of subscription ids for target
+ * 
+ * Mentions:
+ *   mention!{mentionId}        -> Mention object
+ *   mentions!agent!{agentId}   -> string[] of mention ids for agent
+ *   mentions!room!{roomId}     -> string[] of mention ids in room
+ */
+
+// Room keys
+export const roomKey = (id: string) => `room!${id}`;
+export const roomsListKey = () => 'rooms!list';
+
+// Post keys
+export const postKey = (id: string) => `post!${id}`;
+export const postsByRoomKey = (roomId: string) => `posts!room!${roomId}`;
+export const postsByAgentKey = (agentId: string) => `posts!agent!${agentId}`;
+
+// Agent keys
+export const agentKey = (id: string) => `agent!${id}`;
+export const agentsListKey = () => 'agents!list';
+
+// Subscription keys
+export const subKey = (id: string) => `sub!${id}`;
+export const subsByAgentKey = (agentId: string) => `subs!agent!${agentId}`;
+export const subsByTargetKey = (type: string, id: string) => `subs!target!${type}!${id}`;
+
+// Mention keys
+export const mentionKey = (id: string) => `mention!${id}`;
+export const mentionsByAgentKey = (agentId: string) => `mentions!agent!${agentId}`;
+export const mentionsByRoomKey = (roomId: string) => `mentions!room!${roomId}`;
+
+// ============================================================================
+// ID Generation
+// ============================================================================
+
+export const generateId = (prefix: string): string => {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 10);
+  return `${prefix}_${timestamp}${random}`;
+};
+
+// ============================================================================
+// Database Helpers
+// ============================================================================
+
+export async function addToSet<T>(key: string, value: T): Promise<void> {
+  const existing = await db.get(key);
+  if (existing) {
+    if (!existing.includes(value)) {
+      await db.put(key, [...existing, value]);
+    }
+  } else {
+    await db.put(key, [value]);
+  }
+}
+
+export async function removeFromSet<T>(key: string, value: T): Promise<void> {
+  const existing = await db.get(key);
+  if (existing) {
+    const filtered = existing.filter((v: T) => v !== value);
+    await db.put(key, filtered);
+  }
+}
+
+export async function getList<T>(key: string): Promise<T[]> {
+  const result = await db.get(key);
+  return result || [];
+}
+
+// ============================================================================
+// Graceful Shutdown
+// ============================================================================
+
+export async function closeDatabase(): Promise<void> {
+  await db.close();
+}
+
+process.on('SIGINT', async () => {
+  await closeDatabase();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  await closeDatabase();
+  process.exit(0);
+});

@@ -1,0 +1,148 @@
+/**
+ * Hive - Post Routes
+ */
+
+import { Hono } from 'hono';
+import { z } from 'zod';
+import { db, postKey, postsByRoomKey, roomKey, generateId, addToSet, getList } from '../db/index.js';
+import { processMentions } from '../services/spawn.js';
+import type { Post, PostCreateInput, ApiResponse, PaginatedResponse } from '../types.js';
+
+export const postsRouter = new Hono();
+
+// Validation schemas
+const createPostSchema = z.object({
+  roomId: z.string().min(1),
+  authorId: z.string().min(1),
+  content: z.string().min(1).max(10000),
+  replyTo: z.string().optional(),
+});
+
+// Helper to extract mentions from content (@agentId pattern)
+function extractMentions(content: string): string[] {
+  const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
+  const mentions: string[] = [];
+  let match;
+  
+  while ((match = mentionRegex.exec(content)) !== null) {
+    mentions.push(match[1]);
+  }
+  
+  return [...new Set(mentions)]; // unique mentions
+}
+
+// POST /posts - Create a new post
+postsRouter.post('/', async (c) => {
+  try {
+    const body = await c.req.json();
+    const validated = createPostSchema.parse(body);
+    
+    // Verify room exists
+    const room = db.get(roomKey(validated.roomId)) as any;
+    if (!room) {
+      return c.json<ApiResponse<never>>(
+        { success: false, error: 'Room not found' },
+        404
+      );
+    }
+    
+    const postId = generateId('post');
+    const now = Date.now();
+    const mentions = extractMentions(validated.content);
+    
+    const post: Post = {
+      id: postId,
+      roomId: validated.roomId,
+      authorId: validated.authorId,
+      content: validated.content,
+      createdAt: now,
+      updatedAt: now,
+      replyTo: validated.replyTo,
+      mentions,
+    };
+    
+    await db.put(postKey(postId), post);
+    await addToSet(postsByRoomKey(validated.roomId), postId);
+    
+    // Process mentions (create records + spawn agents)
+    const processedMentions = await processMentions(post, room);
+    
+    return c.json<ApiResponse<Post>>({
+      success: true,
+      data: {
+        ...post,
+        processedMentions: processedMentions.length,
+      } as any,
+    }, 201);
+  } catch (error) {
+    console.error('[posts] Error creating post:', error);
+    return c.json<ApiResponse<never>>(
+      { success: false, error: error instanceof Error ? error.message : 'Unknown error' },
+      400
+    );
+  }
+});
+
+// GET /posts - List posts (optionally filter by room)
+postsRouter.get('/', async (c) => {
+  const roomId = c.req.query('roomId');
+  
+  if (roomId) {
+    const postIds = await getList<string>(postsByRoomKey(roomId));
+    const posts: Post[] = [];
+    
+    for (const id of postIds) {
+      const post = db.get(postKey(id));
+      if (post) posts.push(post);
+    }
+    
+    // Sort by creation time (newest first)
+    posts.sort((a, b) => b.createdAt - a.createdAt);
+    
+    return c.json<PaginatedResponse<Post>>({
+      success: true,
+      data: posts,
+      total: posts.length,
+      limit: 100,
+      offset: 0,
+    });
+  }
+  
+  // Return all posts (paginated in production)
+  return c.json<PaginatedResponse<Post>>({
+    success: true,
+    data: [],
+    total: 0,
+    limit: 100,
+    offset: 0,
+  });
+});
+
+// GET /posts/:id - Get a specific post
+postsRouter.get('/:id', async (c) => {
+  const { id } = c.req.param();
+  const post = db.get(postKey(id));
+  
+  if (!post) {
+    return c.json<ApiResponse<never>>({ success: false, error: 'Post not found' }, 404);
+  }
+  
+  return c.json<ApiResponse<Post>>({ success: true, data: post });
+});
+
+// DELETE /posts/:id - Delete a post
+postsRouter.delete('/:id', async (c) => {
+  const { id } = c.req.param();
+  const post = db.get(postKey(id));
+  
+  if (!post) {
+    return c.json<ApiResponse<never>>({ success: false, error: 'Post not found' }, 404);
+  }
+  
+  await db.remove(postKey(id));
+  // Note: Would also need to remove from posts!room!{roomId} in production
+  
+  return c.json<ApiResponse<never>>({ success: true });
+});
+
+export default postsRouter;
