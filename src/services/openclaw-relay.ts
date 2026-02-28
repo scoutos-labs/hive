@@ -215,6 +215,9 @@ export function createRelayHandler(config: RelayRuntimeConfig) {
       return { statusCode, body };
     };
 
+    // Signature validation is mandatory and happens before any parsing side
+    // effects (dedup/throttle state updates) to keep unauthenticated traffic
+    // from influencing runtime behavior.
     if (!signatureVerified) {
       return finalize(
         401,
@@ -257,6 +260,8 @@ export function createRelayHandler(config: RelayRuntimeConfig) {
     const now = config.now();
     cleanupSeenEventIds(state.seenEventIds, now, config.dedupWindowMs);
 
+    // Dedup and throttle are evaluated independently: dedup suppresses replayed
+    // ids; throttle suppresses high-frequency distinct events.
     if (isDuplicateEvent(state.seenEventIds, parsed.id, now, config.dedupWindowMs)) {
       return finalize(
         200,

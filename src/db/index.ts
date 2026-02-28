@@ -4,7 +4,7 @@
  * Key patterns documented in README.md
  */
 
-import { open, Database } from 'lmdb';
+import { open } from 'lmdb';
 
 // ============================================================================
 // Database Connection
@@ -17,6 +17,8 @@ export const db = open<any, any>({
   path: DB_PATH,
   compression: true,
 });
+
+let closePromise: Promise<void> | null = null;
 
 // ============================================================================
 // Key Pattern Utilities
@@ -48,6 +50,9 @@ export const db = open<any, any>({
  *   mentions!agent!{agentId}   -> string[] of mention ids for agent
  *   mentions!room!{roomId}     -> string[] of mention ids in room
  */
+
+// Delimiter invariant: `!` splits namespaces to keep related keys grouped when
+// scanning, and id segments should never contain `!`.
 
 // Room keys
 export const roomKey = (id: string) => `room!${id}`;
@@ -126,8 +131,24 @@ export async function getList<T>(key: string): Promise<T[]> {
 // Graceful Shutdown
 // ============================================================================
 
+/**
+ * Close LMDB exactly once.
+ *
+ * Multiple shutdown hooks can run in the same process; this guard prevents
+ * duplicate close calls from racing and throwing during termination.
+ */
 export async function closeDatabase(): Promise<void> {
-  await db.close();
+  if (closePromise) {
+    await closePromise;
+    return;
+  }
+
+  closePromise = db.close().catch((error) => {
+    closePromise = null;
+    throw error;
+  });
+
+  await closePromise;
 }
 
 process.on('SIGINT', async () => {

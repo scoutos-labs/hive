@@ -36,7 +36,8 @@ async function createAgentResponsePost(
   // Create post directly in database
   const postId = generateId('post');
   
-  // Extract mentions from output
+  // Extract mentions from output. This intentionally mirrors user mention
+  // parsing so agent-to-agent chains use the same routing rules.
   const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
   const mentions: string[] = [];
   let match;
@@ -155,6 +156,8 @@ export async function updateMentionStatus(
   
   await db.put(mentionKey(mentionId), mention);
 
+  // Emit transition events only for real state changes so downstream relays do
+  // not treat idempotent writes as new work.
   if (previousStatus !== status) {
     await emitHiveEvent(
       'mention.spawn_status_changed',
@@ -201,11 +204,25 @@ export async function spawnAgent(
     MENTION_CONTENT: post.content,
   };
   
+  const command = agent.spawnCommand.trim();
+  if (!command) {
+    await updateMentionStatus(mention.id, 'failed', undefined, 'Agent spawnCommand is empty');
+    await emitHiveEvent(
+      'task.failed',
+      {
+        taskId: mention.id,
+        mentionId: mention.id,
+        agentId,
+        roomId: room.id,
+        postId: post.id,
+        error: 'Agent spawnCommand is empty',
+      },
+      'spawn:spawnAgent'
+    );
+    return;
+  }
+
   const args = agent.spawnArgs || [];
-  
-  // Build the full command for shell expansion of env vars
-  const argsString = args.map(a => `"${a.replace(/"/g, '\\"')}"`).join(' ');
-  const fullCommand = `${agent.spawnCommand} ${argsString}`;
   
   // Update status to running
   await updateMentionStatus(mention.id, 'running');
@@ -222,13 +239,16 @@ export async function spawnAgent(
   );
   
   try {
-    // Spawn with pipes to capture output
-    const child = spawn('/bin/sh', ['-c', fullCommand], {
+    // Spawn directly (without shell interpolation) so user-controlled args are
+    // passed as literal argv entries.
+    const child = spawn(command, args, {
       cwd: agent.cwd,
       env,
       detached: false, // Wait for completion to capture output
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+
+    let settled = false;
     
     // Capture stdout and stderr
     let stdout = '';
@@ -272,7 +292,10 @@ export async function spawnAgent(
     });
     
     // Handle completion
-    child.on('close', async (code) => {
+    child.once('close', async (code) => {
+      if (settled) return;
+      settled = true;
+
       const success = code === 0;
       const output = stdout.slice(-10000); // Keep last 10KB
       const error = stderr.slice(-5000) || undefined;
@@ -327,7 +350,10 @@ export async function spawnAgent(
       console.log(`[spawn] Output length: ${stdout.length} chars`);
     });
     
-    child.on('error', async (err) => {
+    child.once('error', async (err) => {
+      if (settled) return;
+      settled = true;
+
       console.error(`[spawn] Failed to spawn agent ${agentId}:`, err.message);
       await updateMentionStatus(mention.id, 'failed', undefined, err.message);
       await emitHiveEvent(
@@ -400,6 +426,8 @@ export async function processMentions(post: Post, room: Room): Promise<Mention[]
       console.log(`[mentions] Agent ${mentionedAgentId} not subscribed to room ${post.roomId}, skipping spawn`);
     }
     
+    // Mention records are created even for unsubscribed agents so operators can
+    // audit intent and see why no spawn was triggered.
     // Create mention record
     const mention = await createMention(
       post.id,

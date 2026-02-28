@@ -10,6 +10,13 @@ import type { ApiResponse, HiveEventType, PaginatedResponse, WebhookSubscription
 
 export const webhookSubscriptionsRouter = new Hono();
 
+type WebhookSubscriptionPublic = Omit<WebhookSubscription, 'secret'>;
+
+function toPublicWebhookSubscription(subscription: WebhookSubscription): WebhookSubscriptionPublic {
+  const { secret: _secret, ...rest } = subscription;
+  return rest;
+}
+
 const eventTypes = [
   'task.started',
   'task.progress',
@@ -34,7 +41,10 @@ webhookSubscriptionsRouter.post('/', async (c) => {
 
     const subscription = await createWebhookSubscription(validated);
 
-    return c.json<ApiResponse<WebhookSubscription>>({ success: true, data: subscription }, 201);
+    return c.json<ApiResponse<WebhookSubscriptionPublic>>(
+      { success: true, data: toPublicWebhookSubscription(subscription) },
+      201
+    );
   } catch (error) {
     return c.json<ApiResponse<never>>(
       {
@@ -50,9 +60,9 @@ webhookSubscriptionsRouter.get('/', async (c) => {
   const includeInactive = c.req.query('includeInactive') === 'true';
   const subscriptions = await listWebhookSubscriptions(includeInactive);
 
-  return c.json<PaginatedResponse<WebhookSubscription>>({
+  return c.json<PaginatedResponse<WebhookSubscriptionPublic>>({
     success: true,
-    data: subscriptions,
+    data: subscriptions.map(toPublicWebhookSubscription),
     total: subscriptions.length,
     limit: subscriptions.length,
     offset: 0,
@@ -67,7 +77,10 @@ webhookSubscriptionsRouter.get('/:id', async (c) => {
     return c.json<ApiResponse<never>>({ success: false, error: 'Webhook subscription not found' }, 404);
   }
 
-  return c.json<ApiResponse<WebhookSubscription>>({ success: true, data: subscription });
+  return c.json<ApiResponse<WebhookSubscriptionPublic>>({
+    success: true,
+    data: toPublicWebhookSubscription(subscription),
+  });
 });
 
 webhookSubscriptionsRouter.delete('/:id', async (c) => {
@@ -78,7 +91,10 @@ webhookSubscriptionsRouter.delete('/:id', async (c) => {
     return c.json<ApiResponse<never>>({ success: false, error: 'Webhook subscription not found' }, 404);
   }
 
-  return c.json<ApiResponse<WebhookSubscription>>({ success: true, data: subscription });
+  return c.json<ApiResponse<WebhookSubscriptionPublic>>({
+    success: true,
+    data: toPublicWebhookSubscription(subscription),
+  });
 });
 
 export default webhookSubscriptionsRouter;

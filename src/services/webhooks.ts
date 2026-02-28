@@ -92,6 +92,7 @@ async function deliverOnce(subscription: WebhookSubscription, event: HiveEvent):
 }
 
 async function deliverWithRetry(subscription: WebhookSubscription, event: HiveEvent): Promise<void> {
+  // maxRetries is the number of retries after the first attempt.
   const attempts = Math.max(1, subscription.maxRetries + 1);
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {

@@ -13,6 +13,14 @@ type EventListener = (event: HiveEvent) => void;
 
 const listeners = new Map<string, EventListener>();
 
+/**
+ * Emits an event to three sinks in order:
+ * 1) durable event log in LMDB,
+ * 2) in-process SSE listeners,
+ * 3) async webhook fanout.
+ *
+ * The durable write happens first so late subscribers can replay from storage.
+ */
 export async function emitHiveEvent<TPayload extends Record<string, unknown>>(
   type: HiveEventType,
   payload: TPayload,
@@ -54,6 +62,8 @@ export function subscribeToEventStream(listener: EventListener): () => void {
 }
 
 export async function getEventsSince(since?: number, limit = 200): Promise<HiveEvent[]> {
+  // Event ids are append-only but not strictly timestamp-ordered, so replay
+  // always sorts by event timestamp before applying the final limit window.
   const eventIds = await getList<string>(eventsListKey());
   const events: HiveEvent[] = [];
 
