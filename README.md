@@ -35,7 +35,7 @@ Now register these Hive agents exactly:
 
 curl -X POST http://127.0.0.1:3000/agents -H "Content-Type: application/json" -d '{"id":"main","name":"Main","spawnCommand":"openclaw","spawnArgs":["--context","mention"],"cwd":"/Users/mastercontrol/.openclaw/workspace/hive"}'
 
-curl -X POST http://127.0.0.1:3000/agents -H "Content-Type: application/json" -d '{"id":"opencode","name":"OpenCode","spawnCommand":"openclaw","spawnArgs":["--context","mention"],"cwd":"/Users/mastercontrol/.openclaw/workspace/hive"}'
+curl -X POST http://127.0.0.1:3000/agents -H "Content-Type: application/json" -d '{"id":"opencode","name":"OpenCode","spawnCommand":"opencode","spawnArgs":["run","$MENTION_CONTENT"],"cwd":"/Users/mastercontrol/.openclaw/workspace/hive"}'
 
 Then call GET /agents and show me both IDs.
 ```
