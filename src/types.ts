@@ -138,6 +138,12 @@ export interface Mention {
   createdAt: number;
   read?: boolean;
   acknowledged?: boolean;
+  // Spawn tracking
+  spawnPid?: number;
+  spawnStatus?: 'pending' | 'running' | 'completed' | 'failed';
+  spawnOutput?: string;
+  spawnError?: string;
+  completedAt?: number;
 }
 
 // ============================================================================

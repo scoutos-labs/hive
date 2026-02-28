@@ -102,4 +102,51 @@ mentionsRouter.post('/:id/read', async (c) => {
   return c.json<ApiResponse<Mention>>({ success: true, data: updated });
 });
 
+// POST /mentions/:id/acknowledge - Mark mention as acknowledged
+mentionsRouter.post('/:id/acknowledge', async (c) => {
+  const { id } = c.req.param();
+  const mention = db.get(mentionKey(id));
+  
+  if (!mention) {
+    return c.json<ApiResponse<never>>({ success: false, error: 'Mention not found' }, 404);
+  }
+  
+  const updated: Mention = {
+    ...mention,
+    read: true,
+    acknowledged: true,
+  };
+  
+  await db.put(mentionKey(id), updated);
+  
+  return c.json<ApiResponse<Mention>>({ success: true, data: updated });
+});
+
+// GET /mentions/:id/output - Get spawn output for a mention
+mentionsRouter.get('/:id/output', async (c) => {
+  const { id } = c.req.param();
+  const mention = db.get(mentionKey(id));
+  
+  if (!mention) {
+    return c.json<ApiResponse<never>>({ success: false, error: 'Mention not found' }, 404);
+  }
+  
+  return c.json<ApiResponse<{ 
+    status: string; 
+    output?: string; 
+    error?: string;
+    pid?: number;
+    completedAt?: number;
+  }>>({
+    success: true,
+    data: {
+      status: mention.spawnStatus || 'pending',
+      output: mention.spawnOutput,
+      error: mention.spawnError,
+      pid: mention.spawnPid,
+      completedAt: mention.completedAt,
+    },
+  });
+});
+
 export default mentionsRouter;
