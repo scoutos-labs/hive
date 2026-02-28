@@ -23,6 +23,7 @@ import {
 import type { Agent, Mention, Room, Post } from '../types.js';
 import { emitHiveEvent } from './events.js';
 import { getSpawnConfig } from './spawn-config.js';
+import { checkCommandAllowed, validateSpawnArgs } from './spawn-allowlist.js';
 
 // ============================================================================
 // Concurrency tracking
@@ -269,7 +270,35 @@ export async function spawnAgent(
     return;
   }
 
+  // Defense-in-depth: re-check allowlist at spawn time in case the agent record
+  // was persisted before the allowlist was enabled or was written directly to DB.
+  const cmdCheck = checkCommandAllowed(command);
+  if (!cmdCheck.allowed) {
+    const msg = cmdCheck.reason ?? 'spawnCommand not on allowlist';
+    console.error(`[spawn] Blocked spawn for agent ${agentId}: ${msg}`);
+    await updateMentionStatus(mention.id, 'failed', undefined, msg);
+    await emitHiveEvent(
+      'task.failed',
+      { taskId: mention.id, mentionId: mention.id, agentId, roomId: room.id, postId: post.id, error: msg },
+      'spawn:spawnAgent'
+    );
+    return;
+  }
+
   const args = agent.spawnArgs || [];
+
+  // Validate args before spawning
+  const argsError = validateSpawnArgs(args);
+  if (argsError) {
+    console.error(`[spawn] Invalid args for agent ${agentId}: ${argsError}`);
+    await updateMentionStatus(mention.id, 'failed', undefined, argsError);
+    await emitHiveEvent(
+      'task.failed',
+      { taskId: mention.id, mentionId: mention.id, agentId, roomId: room.id, postId: post.id, error: argsError },
+      'spawn:spawnAgent'
+    );
+    return;
+  }
   
   // Update status to running and track concurrency
   incrementRunning(agentId);
