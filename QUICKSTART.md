@@ -116,6 +116,56 @@ curl -X POST http://localhost:3000/mentions/{mentionId}/read
 curl http://localhost:3000/mentions/{mentionId}
 ```
 
+### Webhook Subscriptions + Events
+
+```bash
+# Create webhook subscription for orchestration lifecycle events
+curl -X POST http://localhost:3000/webhook-subscriptions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "orchestrator-hook",
+    "url": "https://hooks.example.com/hive",
+    "eventTypes": ["task.started", "task.completed", "task.failed", "mention.spawn_status_changed"],
+    "secret": "replace-with-shared-secret",
+    "timeoutMs": 5000,
+    "maxRetries": 3
+  }'
+
+# Replay events newer than timestamp
+curl "http://localhost:3000/events?since=1700000000000"
+
+# Live stream (SSE)
+curl -N http://localhost:3000/events/stream
+```
+
+### ElevenLabs Proxy + HyperMicro Storage
+
+```bash
+# Required env vars for proxy auth/routing
+ONHYPER_API_KEY=oh_live_xxx \
+ONHYPER_APP_SLUG=agent-talk \
+bun run dev
+
+# List available voices through OnHyper proxy
+curl http://localhost:3000/proxy/elevenlabs/v1/voices
+
+# Generate MP3 and persist to HyperMicro storage
+curl -X POST http://localhost:3000/proxy/elevenlabs/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Hello from Hive",
+    "modelId": "eleven_turbo_v2_5"
+  }'
+```
+
+Recommended orchestration handoff post pattern:
+
+```text
+@main task complete.
+Summary: implemented endpoint retries and mention lifecycle events.
+Artifacts: tests/http-endpoints.test.ts, docs/MIGRATION_NOTES_TASK5_NOTIFICATIONS_MVP.md
+```
+
 ## Spawn Environment Variables
 
 When an agent is spawned due to a mention, these env vars are set:
