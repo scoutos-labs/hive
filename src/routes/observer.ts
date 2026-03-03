@@ -124,6 +124,31 @@ const observerHtml = `<!doctype html>
       background: linear-gradient(180deg, #fff 0%, #f8fbfd 100%);
     }
 
+    .kpi-card .kpi-value {
+      font-size: 1.4rem;
+      font-weight: 700;
+    }
+
+    .kpi-card.running-now {
+      border-color: #1f8f4f;
+      background: linear-gradient(180deg, #f0fff6 0%, #dcf7e8 100%);
+      box-shadow: 0 16px 30px rgba(20, 133, 67, 0.2);
+    }
+
+    .kpi-card.running-now .muted {
+      color: #0f6d39;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .kpi-card.running-now .kpi-value {
+      color: #0f6d39;
+      font-weight: 900;
+      font-size: 2rem;
+      line-height: 1.05;
+    }
+
     .split {
       display: grid;
       grid-template-columns: 1.2fr 1fr;
@@ -350,12 +375,12 @@ const observerHtml = `<!doctype html>
     function renderDashboard(summary) {
       const t = summary.totals;
       refs.dashboardTotals.innerHTML = [
-        ['Total', t.total],
-        ['Pending', t.pending],
-        ['Running', t.running],
-        ['Completed', t.completed],
-        ['Failed', t.failed],
-      ].map(([k, v]) => '<div class="agent-card"><div class="muted">' + k + '</div><div style="font-size:1.4rem;font-weight:700">' + v + '</div></div>').join('');
+        { label: 'Total', value: t.total },
+        { label: 'Pending', value: t.pending },
+        { label: 'Running now', value: t.running, className: 'running-now' },
+        { label: 'Completed', value: t.completed },
+        { label: 'Failed', value: t.failed },
+      ].map((item) => '<div class="agent-card kpi-card ' + (item.className || '') + '"><div class="muted">' + item.label + '</div><div class="kpi-value">' + item.value + '</div></div>').join('');
 
       if (!summary.agents.length) {
         refs.dashboardAgents.innerHTML = '<div class="empty">No agent status data in this filter window.</div>';
