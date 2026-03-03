@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { db, agentKey, agentsListKey, addToSet, removeFromSet, getList } from '../db/index.js';
 import type { Agent, RegisterAgentBody, ApiResponse, PaginatedResponse } from '../types.js';
+import { checkCommandAllowed, validateSpawnArgs } from '../services/spawn-allowlist.js';
 
 export const agentsRouter = new Hono();
 
@@ -35,6 +36,21 @@ agentsRouter.post('/', async (c) => {
     const body = await c.req.json();
     const validated = registerAgentSchema.parse(body);
     
+    // Validate spawn command against allowlist
+    const cmdCheck = checkCommandAllowed(validated.spawnCommand);
+    if (!cmdCheck.allowed) {
+      return c.json<ApiResponse<never>>(
+        { success: false, error: cmdCheck.reason ?? 'spawnCommand not allowed' },
+        422
+      );
+    }
+
+    // Validate spawn args
+    const argsError = validateSpawnArgs(validated.spawnArgs ?? []);
+    if (argsError) {
+      return c.json<ApiResponse<never>>({ success: false, error: argsError }, 422);
+    }
+
     // Check if agent already exists
     const existing = db.get(agentKey(validated.id));
     if (existing) {
@@ -112,7 +128,26 @@ agentsRouter.put('/:id', async (c) => {
     
     const body = await c.req.json();
     const validated = updateAgentSchema.parse(body);
-    
+
+    // Validate new spawn command if provided
+    if (validated.spawnCommand !== undefined) {
+      const cmdCheck = checkCommandAllowed(validated.spawnCommand);
+      if (!cmdCheck.allowed) {
+        return c.json<ApiResponse<never>>(
+          { success: false, error: cmdCheck.reason ?? 'spawnCommand not allowed' },
+          422
+        );
+      }
+    }
+
+    // Validate new spawn args if provided
+    if (validated.spawnArgs !== undefined) {
+      const argsError = validateSpawnArgs(validated.spawnArgs);
+      if (argsError) {
+        return c.json<ApiResponse<never>>({ success: false, error: argsError }, 422);
+      }
+    }
+
     const updatedAt = Date.now();
     const updated: Agent = {
       ...agent,
