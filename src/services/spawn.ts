@@ -22,6 +22,33 @@ import {
 } from '../db/index.js';
 import type { Agent, Mention, Room, Post } from '../types.js';
 import { emitHiveEvent } from './events.js';
+import { getSpawnConfig } from './spawn-config.js';
+
+// ============================================================================
+// Concurrency tracking
+// ============================================================================
+
+/** Number of currently running agent processes (global). */
+let globalRunningCount = 0;
+
+/** Per-agent running counts keyed by agentId. */
+const perAgentRunningCount = new Map<string, number>();
+
+function incrementRunning(agentId: string): void {
+  globalRunningCount++;
+  perAgentRunningCount.set(agentId, (perAgentRunningCount.get(agentId) ?? 0) + 1);
+}
+
+function decrementRunning(agentId: string): void {
+  globalRunningCount = Math.max(0, globalRunningCount - 1);
+  const prev = perAgentRunningCount.get(agentId) ?? 0;
+  const next = Math.max(0, prev - 1);
+  if (next === 0) {
+    perAgentRunningCount.delete(agentId);
+  } else {
+    perAgentRunningCount.set(agentId, next);
+  }
+}
 
 // ============================================================================
 // Create a post from agent output (triggers mention chain)
@@ -31,7 +58,8 @@ async function createAgentResponsePost(
   room: Room,
   authorId: string,
   output: string,
-  replyToPostId?: string
+  replyToPostId?: string,
+  chainDepth: number = 0
 ): Promise<Post> {
   // Create post directly in database
   const postId = generateId('post');
@@ -59,10 +87,10 @@ async function createAgentResponsePost(
   await db.put(postKey(postId), post);
   await addToSet(postsByRoomKey(room.id), postId);
   
-  console.log(`[spawn] Created agent response post ${postId} with mentions: ${mentions.join(', ')}`);
+  console.log(`[spawn] Created agent response post ${postId} with mentions: ${mentions.join(', ')} (chain depth ${chainDepth})`);
   
   // Process mentions in this post (triggers spawn chain)
-  await processMentions(post, room);
+  await processMentions(post, room, chainDepth);
   
   return post;
 }
@@ -182,8 +210,26 @@ export async function spawnAgent(
   agentId: string,
   mention: Mention,
   post: Post,
-  room: Room
+  room: Room,
+  chainDepth: number = 0
 ): Promise<void> {
+  const cfg = getSpawnConfig();
+
+  // ── Concurrency guards ────────────────────────────────────────────────────
+  const agentRunning = perAgentRunningCount.get(agentId) ?? 0;
+  if (agentRunning >= cfg.perAgentConcurrencyLimit) {
+    const msg = `Per-agent concurrency limit (${cfg.perAgentConcurrencyLimit}) reached for ${agentId}`;
+    console.warn(`[spawn] ${msg}`);
+    await updateMentionStatus(mention.id, 'failed', undefined, msg);
+    return;
+  }
+  if (globalRunningCount >= cfg.globalConcurrencyLimit) {
+    const msg = `Global concurrency limit (${cfg.globalConcurrencyLimit}) reached`;
+    console.warn(`[spawn] ${msg}`);
+    await updateMentionStatus(mention.id, 'failed', undefined, msg);
+    return;
+  }
+
   const agent = await db.get(agentKey(agentId)) as Agent | undefined;
   
   if (!agent) {
@@ -191,7 +237,7 @@ export async function spawnAgent(
     return;
   }
   
-  console.log(`[spawn] Spawning agent ${agentId} for mention ${mention.id}`);
+  console.log(`[spawn] Spawning agent ${agentId} for mention ${mention.id} (chain depth ${chainDepth})`);
   
   // Build environment with mention context
   const env = {
@@ -202,6 +248,7 @@ export async function spawnAgent(
     POST_ID: post.id,
     FROM_AGENT: mention.mentioningAgentId || 'unknown',
     MENTION_CONTENT: post.content,
+    HIVE_CHAIN_DEPTH: String(chainDepth),
   };
   
   const command = agent.spawnCommand.trim();
@@ -224,7 +271,8 @@ export async function spawnAgent(
 
   const args = agent.spawnArgs || [];
   
-  // Update status to running
+  // Update status to running and track concurrency
+  incrementRunning(agentId);
   await updateMentionStatus(mention.id, 'running');
   await emitHiveEvent(
     'task.started',
@@ -234,6 +282,7 @@ export async function spawnAgent(
       agentId,
       roomId: room.id,
       postId: post.id,
+      chainDepth,
     },
     'spawn:spawnAgent'
   );
@@ -249,15 +298,41 @@ export async function spawnAgent(
     });
 
     let settled = false;
+
+    // ── Timeout watchdog ────────────────────────────────────────────────────
+    const timeoutHandle = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      decrementRunning(agentId);
+      console.warn(`[spawn] Agent ${agentId} timed out after ${cfg.timeoutMs}ms, killing`);
+      try { child.kill('SIGKILL'); } catch { /* already dead */ }
+      const msg = `Spawn timed out after ${cfg.timeoutMs}ms`;
+      updateMentionStatus(mention.id, 'failed', undefined, msg).catch(() => {});
+      emitHiveEvent(
+        'task.failed',
+        { taskId: mention.id, mentionId: mention.id, agentId, roomId: room.id, postId: post.id, error: msg },
+        'spawn:timeout'
+      ).catch(() => {});
+    }, cfg.timeoutMs);
     
-    // Capture stdout and stderr
-    let stdout = '';
-    let stderr = '';
+    // Capture stdout and stderr with byte caps
+    let stdoutBuf = '';
+    let stdoutTruncated = false;
+    let stderrBuf = '';
+    let stderrTruncated = false;
     
-    child.stdout?.on('data', (data) => {
-      stdout += data.toString();
-      // Log in real-time for debugging
-      console.log(`[spawn:${agentId}:out] ${data.toString().slice(0, 200)}...`);
+    child.stdout?.on('data', (data: Buffer) => {
+      const chunk = data.toString();
+      if (!stdoutTruncated) {
+        const remaining = cfg.maxStdoutBytes - stdoutBuf.length;
+        if (remaining <= 0) {
+          stdoutTruncated = true;
+        } else {
+          stdoutBuf += chunk.slice(0, remaining);
+          if (stdoutBuf.length >= cfg.maxStdoutBytes) stdoutTruncated = true;
+        }
+      }
+      console.log(`[spawn:${agentId}:out] ${chunk.slice(0, 200)}`);
       void emitHiveEvent(
         'task.progress',
         {
@@ -267,15 +342,24 @@ export async function spawnAgent(
           roomId: room.id,
           postId: post.id,
           stream: 'stdout',
-          chunk: data.toString().slice(0, 1000),
+          chunk: chunk.slice(0, 1000),
         },
         'spawn:stdout'
       );
     });
     
-    child.stderr?.on('data', (data) => {
-      stderr += data.toString();
-      console.error(`[spawn:${agentId}:err] ${data.toString().slice(0, 200)}...`);
+    child.stderr?.on('data', (data: Buffer) => {
+      const chunk = data.toString();
+      if (!stderrTruncated) {
+        const remaining = cfg.maxStderrBytes - stderrBuf.length;
+        if (remaining <= 0) {
+          stderrTruncated = true;
+        } else {
+          stderrBuf += chunk.slice(0, remaining);
+          if (stderrBuf.length >= cfg.maxStderrBytes) stderrTruncated = true;
+        }
+      }
+      console.error(`[spawn:${agentId}:err] ${chunk.slice(0, 200)}`);
       void emitHiveEvent(
         'task.progress',
         {
@@ -285,7 +369,7 @@ export async function spawnAgent(
           roomId: room.id,
           postId: post.id,
           stream: 'stderr',
-          chunk: data.toString().slice(0, 1000),
+          chunk: chunk.slice(0, 1000),
         },
         'spawn:stderr'
       );
@@ -295,24 +379,34 @@ export async function spawnAgent(
     child.once('close', async (code) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeoutHandle);
+      decrementRunning(agentId);
 
       const success = code === 0;
-      const output = stdout.slice(-10000); // Keep last 10KB
-      const error = stderr.slice(-5000) || undefined;
+      const output = stdoutTruncated ? stdoutBuf + '\n[output truncated]' : stdoutBuf;
+      const errorText = stderrTruncated ? stderrBuf + '\n[stderr truncated]' : stderrBuf;
+      const error = errorText || undefined;
       
       if (success) {
         console.log(`[spawn] Agent ${agentId} completed successfully (PID: ${child.pid})`);
         await updateMentionStatus(mention.id, 'completed', output, undefined);
         
         // Check for @mentions in output - if found, create a post (triggers chain)
+        // but only if we haven't exceeded the chain depth limit.
         const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
-        const hasMentions = mentionRegex.test(stdout);
+        const hasMentions = mentionRegex.test(stdoutBuf);
         let responsePostId: string | undefined;
         
         if (hasMentions) {
-          console.log(`[spawn] Output contains mentions, creating response post`);
-          const responsePost = await createAgentResponsePost(room, agentId, stdout, post.id);
-          responsePostId = responsePost.id;
+          if (chainDepth >= cfg.maxChainDepth) {
+            console.warn(
+              `[spawn] Chain depth limit (${cfg.maxChainDepth}) reached for mention ${mention.id}, suppressing response post`
+            );
+          } else {
+            console.log(`[spawn] Output contains mentions, creating response post (chain depth ${chainDepth + 1})`);
+            const responsePost = await createAgentResponsePost(room, agentId, stdoutBuf, post.id, chainDepth + 1);
+            responsePostId = responsePost.id;
+          }
         }
 
         await emitHiveEvent(
@@ -324,8 +418,9 @@ export async function spawnAgent(
             roomId: room.id,
             postId: post.id,
             exitCode: code,
-            outputLength: stdout.length,
+            outputLength: stdoutBuf.length,
             responsePostId,
+            chainDepth,
           },
           'spawn:close'
         );
@@ -342,17 +437,20 @@ export async function spawnAgent(
             postId: post.id,
             exitCode: code,
             error,
+            chainDepth,
           },
           'spawn:close'
         );
       }
       
-      console.log(`[spawn] Output length: ${stdout.length} chars`);
+      console.log(`[spawn] Output length: ${stdoutBuf.length} chars`);
     });
     
     child.once('error', async (err) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeoutHandle);
+      decrementRunning(agentId);
 
       console.error(`[spawn] Failed to spawn agent ${agentId}:`, err.message);
       await updateMentionStatus(mention.id, 'failed', undefined, err.message);
@@ -380,6 +478,7 @@ export async function spawnAgent(
     console.log(`[spawn] Spawned agent ${agentId} (PID: ${child.pid})`);
     
   } catch (err) {
+    decrementRunning(agentId);
     console.error(`[spawn] Error spawning agent ${agentId}:`, err);
     await updateMentionStatus(mention.id, 'failed', undefined, String(err));
     await emitHiveEvent(
@@ -401,8 +500,9 @@ export async function spawnAgent(
 // Process mentions in a post
 // ============================================================================
 
-export async function processMentions(post: Post, room: Room): Promise<Mention[]> {
+export async function processMentions(post: Post, room: Room, chainDepth: number = 0): Promise<Mention[]> {
   const mentions: Mention[] = [];
+  const cfg = getSpawnConfig();
   
   // Extract mentions from content (@agentId pattern)
   const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
@@ -440,10 +540,22 @@ export async function processMentions(post: Post, room: Room): Promise<Mention[]
     
     mentions.push(mention);
     
-    // Only spawn if subscribed
+    // Only spawn if subscribed and chain depth limit not exceeded
     if (isSubscribed) {
+      if (chainDepth > cfg.maxChainDepth) {
+        console.warn(
+          `[mentions] Chain depth ${chainDepth} exceeds limit ${cfg.maxChainDepth} for agent ${mentionedAgentId}, suppressing spawn`
+        );
+        await updateMentionStatus(
+          mention.id,
+          'failed',
+          undefined,
+          `Chain depth limit (${cfg.maxChainDepth}) exceeded`
+        );
+        continue;
+      }
       // Spawn asynchronously - don't await
-      spawnAgent(mentionedAgentId, mention, post, room).catch(err => {
+      spawnAgent(mentionedAgentId, mention, post, room, chainDepth).catch(err => {
         console.error(`[mentions] Spawn error for ${mentionedAgentId}:`, err);
       });
     }
