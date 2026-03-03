@@ -1,0 +1,8 @@
+{
+  "name": "agent-talk-local",
+  "slug": "agent-talk-local",
+  "apiKey": "oh_live_local_dev_key",
+  "staticDir": "./docs/landing",
+  "port": 3100,
+  "baseUrl": "http://127.0.0.1:3000"
+}
