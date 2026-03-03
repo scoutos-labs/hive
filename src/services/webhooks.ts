@@ -182,3 +182,38 @@ export async function dispatchEventToWebhooks(event: HiveEvent): Promise<void> {
       .map((subscription) => deliverWithRetry(subscription, event))
   );
 }
+
+// Webhook deliveries are stored as events in the database
+// This function retrieves delivery attempts from the events log
+export async function listWebhookDeliveries(options: {
+  limit?: number;
+  eventType?: string;
+  subscriptionId?: string;
+  since?: number;
+  ok?: boolean;
+}): Promise<any[]> {
+  // For now, return events that are webhook-related
+  // In the future, we could store dedicated webhook delivery records
+  const ids = await getList<string>('events!list');
+  const deliveries: any[] = [];
+
+  for (const id of ids) {
+    const event = await db.get(`event!${id}`);
+    if (!event) continue;
+
+    const evt = event as any;
+    
+    // Filter by event type if specified
+    if (options.eventType && evt.type !== options.eventType) continue;
+    
+    // Filter by time if specified
+    if (options.since && evt.timestamp < options.since) continue;
+
+    deliveries.push(evt);
+  }
+
+  // Sort by timestamp descending and apply limit
+  deliveries.sort((a, b) => b.timestamp - a.timestamp);
+  
+  return options.limit ? deliveries.slice(0, options.limit) : deliveries;
+}
