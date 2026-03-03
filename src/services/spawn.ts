@@ -299,6 +299,16 @@ export async function spawnAgent(
     );
     return;
   }
+
+  // Resolve working directory: room.cwd takes precedence over agent.cwd
+  const spawnCwd = room.cwd || agent.cwd;
+  
+  // Resolve $WORKSPACE placeholder in args with the cwd
+  const resolvedArgs = args.map(arg => {
+    if (arg === '$WORKSPACE' && spawnCwd) return spawnCwd;
+    if (arg === '$MENTION_CONTENT') return post.content;
+    return arg;
+  });
   
   // Update status to running and track concurrency
   incrementRunning(agentId);
@@ -319,8 +329,8 @@ export async function spawnAgent(
   try {
     // Spawn directly (without shell interpolation) so user-controlled args are
     // passed as literal argv entries.
-    const child = spawn(command, args, {
-      cwd: agent.cwd,
+    const child = spawn(command, resolvedArgs, {
+      cwd: spawnCwd,
       env,
       detached: false, // Wait for completion to capture output
       stdio: ['ignore', 'pipe', 'pipe'],

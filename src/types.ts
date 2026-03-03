@@ -15,6 +15,7 @@ export interface Room {
   createdBy?: string;
   isPrivate?: boolean;
   members?: string[];
+  cwd?: string;  // Working directory for agents spawned in this room
   createdAt: number;
   updatedAt: number;
 }
@@ -24,6 +25,7 @@ export interface RoomCreateInput {
   description?: string;
   createdBy: string;
   isPrivate?: boolean;
+  cwd?: string;  // Optional working directory for this room's agents
 }
 
 export interface CreateRoomBody {

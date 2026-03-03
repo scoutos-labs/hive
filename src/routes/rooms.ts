@@ -15,6 +15,7 @@ const createRoomSchema = z.object({
   description: z.string().max(500).optional(),
   createdBy: z.string().min(1),
   isPrivate: z.boolean().optional().default(false),
+  cwd: z.string().optional(),  // Working directory for agents spawned in this room
 });
 
 // POST /rooms - Create a new room
@@ -35,6 +36,7 @@ roomsRouter.post('/', async (c) => {
       updatedAt: now,
       isPrivate: validated.isPrivate,
       members: [validated.createdBy],
+      cwd: validated.cwd,  // Working directory for agents spawned in this room
     };
     
     await db.put(roomKey(roomId), room);
@@ -78,6 +80,44 @@ roomsRouter.get('/:id', async (c) => {
   }
   
   return c.json<ApiResponse<Room>>({ success: true, data: room });
+});
+
+// PUT /rooms/:id - Update a room
+const updateRoomSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).optional(),
+  cwd: z.string().optional(),
+  isPrivate: z.boolean().optional(),
+  members: z.array(z.string()).optional(),
+});
+
+roomsRouter.put('/:id', async (c) => {
+  const { id } = c.req.param();
+  const room = db.get(roomKey(id)) as Room | undefined;
+  
+  if (!room) {
+    return c.json<ApiResponse<never>>({ success: false, error: 'Room not found' }, 404);
+  }
+  
+  try {
+    const body = await c.req.json();
+    const validated = updateRoomSchema.parse(body);
+    
+    const updatedRoom: Room = {
+      ...room,
+      ...validated,
+      updatedAt: Date.now(),
+    };
+    
+    await db.put(roomKey(id), updatedRoom);
+    
+    return c.json<ApiResponse<Room>>({ success: true, data: updatedRoom });
+  } catch (error) {
+    return c.json<ApiResponse<never>>(
+      { success: false, error: error instanceof Error ? error.message : 'Unknown error' },
+      400
+    );
+  }
 });
 
 // DELETE /rooms/:id - Delete a room
