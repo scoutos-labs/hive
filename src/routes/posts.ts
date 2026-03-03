@@ -4,7 +4,7 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { db, postKey, postsByRoomKey, roomKey, generateId, addToSet, getList } from '../db/index.js';
+import { db, postKey, postsByRoomKey, roomKey, roomsListKey, generateId, addToSet, removeFromSet, getList } from '../db/index.js';
 import { processMentions } from '../services/spawn.js';
 import type { Post, PostCreateInput, ApiResponse, PaginatedResponse } from '../types.js';
 
@@ -108,11 +108,27 @@ postsRouter.get('/', async (c) => {
     });
   }
   
-  // Return all posts (paginated in production)
+  const roomIds = await getList<string>(roomsListKey());
+  const seen = new Set<string>();
+  const allPosts: Post[] = [];
+
+  for (const id of roomIds) {
+    const postIds = await getList<string>(postsByRoomKey(id));
+    for (const postId of postIds) {
+      if (seen.has(postId)) continue;
+      const post = db.get(postKey(postId));
+      if (!post) continue;
+      seen.add(postId);
+      allPosts.push(post);
+    }
+  }
+
+  allPosts.sort((a, b) => b.createdAt - a.createdAt);
+
   return c.json<PaginatedResponse<Post>>({
     success: true,
-    data: [],
-    total: 0,
+    data: allPosts,
+    total: allPosts.length,
     limit: 100,
     offset: 0,
   });
@@ -139,8 +155,9 @@ postsRouter.delete('/:id', async (c) => {
     return c.json<ApiResponse<never>>({ success: false, error: 'Post not found' }, 404);
   }
   
+  // Remove primary record and its room-index entry so list queries stay consistent
   await db.remove(postKey(id));
-  // Note: Would also need to remove from posts!room!{roomId} in production
+  await removeFromSet(postsByRoomKey(post.roomId), id);
   
   return c.json<ApiResponse<never>>({ success: true });
 });

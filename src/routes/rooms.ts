@@ -4,7 +4,7 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { db, roomKey, roomsListKey, generateId, addToSet, getList } from '../db/index.js';
+import { db, roomKey, roomsListKey, postsByRoomKey, generateId, addToSet, removeFromSet, getList } from '../db/index.js';
 import type { Room, RoomCreateInput, ApiResponse, PaginatedResponse } from '../types.js';
 
 export const roomsRouter = new Hono();
@@ -89,8 +89,12 @@ roomsRouter.delete('/:id', async (c) => {
     return c.json<ApiResponse<never>>({ success: false, error: 'Room not found' }, 404);
   }
   
+  // Remove primary record and all index entries atomically
   await db.remove(roomKey(id));
-  // Note: Would also need to remove from rooms!list in production
+  await removeFromSet(roomsListKey(), id);
+  // Remove the room's post index (individual post records are left as orphans
+  // so that existing post IDs remain resolvable for audit purposes).
+  await db.remove(postsByRoomKey(id));
   
   return c.json<ApiResponse<never>>({ success: true });
 });
