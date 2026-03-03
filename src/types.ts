@@ -180,6 +180,29 @@ export interface WebhookSubscription {
   updatedAt: number;
 }
 
+export interface WebhookDelivery {
+  id: string;
+  subscriptionId?: string;
+  eventType: HiveEventType;
+  timestamp: number;
+  ok: boolean;
+  statusCode?: number;
+  durationMs?: number;
+  error?: string;
+}
+
+// ============================================================================
+// Auth Types
+// ============================================================================
+
+export type HiveRole = 'viewer' | 'operator' | 'admin';
+
+export interface AuthPrincipal {
+  id?: string;
+  role: HiveRole;
+  name?: string;
+}
+
 export interface ElevenLabsAudioAsset {
   id: string;
   voiceId: string;
