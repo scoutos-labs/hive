@@ -1,5 +1,6 @@
 #!/bin/bash
 # Hive spawn wrapper - executes tasks via OpenClaw gateway
+# Supports --step flag for task decomposition with streaming JSON output
 # Environment vars: MENTION_ID, ROOM_ID, ROOM_NAME, ROOM_CWD, POST_ID, FROM_AGENT, MENTION_CONTENT
 
 set -e
@@ -7,6 +8,11 @@ set -e
 # Log to stderr (not stdout) to avoid mention detection
 log() {
     echo "$1" >&2
+}
+
+# Output streaming JSON to stdout (captured by Hive)
+emit() {
+    echo "$1"
 }
 
 log "[hive-spawn] Starting task: $MENTION_ID"
@@ -23,9 +29,15 @@ else
     log "[hive-spawn] Using default workspace"
 fi
 
+# Parse JSON line and extract field
+json_field() {
+    echo "$1" | jq -r ".$2 // empty" 2>/dev/null
+}
+
 # Check for --step flag in message
-if echo "$MENTION_CONTENT" | grep -q '\-\-step\>'; then
+if echo "$MENTION_CONTENT" | grep -qE '\-\-step\b'; then
     log "[hive-spawn] --step flag detected, running step decomposition"
+    emit '{"type":"step_mode","enabled":true}'
     
     # Remove --step flag from message for planning
     TASK_MESSAGE=$(echo "$MENTION_CONTENT" | sed 's/ *--step//g')
@@ -34,115 +46,137 @@ if echo "$MENTION_CONTENT" | grep -q '\-\-step\>'; then
     # PHASE 1: Planning
     # ========================================
     log "[hive-spawn] Phase 1: Planning"
+    emit '{"type":"phase","name":"planning"}'
     
-    PLANNER_PROMPT="You are a task planner. Break down the following task into sequential steps.
+    PLANNER_PROMPT="You are a task planner. Break down this task into sequential steps.
 
 TASK: $TASK_MESSAGE
 
-For each step, provide:
-1. A clear description
-2. Success criteria (verifiable conditions)
-3. Dependencies on previous steps (if any)
+For each step, define:
+- id: step-N (incrementing number)
+- description: what to do
+- success_criteria: list of verifiable conditions
+- dependencies: which steps must complete first (empty for first step)
 
-Output ONLY valid JSON, no markdown, no code blocks, no other text:
-{\"steps\":[{\"id\":\"step-1\",\"description\":\"...\",\"success_criteria\":[\"...\"],\"dependencies\":[]}]}
+Output ONLY JSON lines, one per line, no markdown, no code blocks:
 
-Analyze the task and output the JSON plan now."
+First line MUST be:
+{\"type\":\"plan\",\"steps\":[{\"id\":\"step-1\",\"description\":\"...\",\"success_criteria\":[\"...\"],\"dependencies\":[]},...]}
 
-    plan_raw=$(openclaw agent --local --session-id "hive-$MENTION_ID-planner" --message "$PLANNER_PROMPT" --json 2>&1)
+Then confirm:
+{\"type\":\"plan_complete\",\"step_count\":N}"
+
+    plan_output=$(openclaw agent --local --session-id "hive-$MENTION_ID-planner" --message "$PLANNER_PROMPT" --json 2>&1)
     
     if [[ $? -ne 0 ]]; then
         log "[hive-spawn] Planning phase failed"
-        echo "$plan_raw"
+        emit "{\"type\":\"error\",\"phase\":\"planning\",\"message\":\"Planner failed\"}"
+        echo "$plan_output"
         exit 1
     fi
     
-    # Extract JSON from response - handle various output formats
-    # First try: extract from markdown code blocks
-    plan_json=$(echo "$plan_raw" | sed -n '/```/,/```/p' | sed '1d;$d' | tr -d '\n' | tr -d '\r')
+    # Extract plan line from output
+    plan_line=$(echo "$plan_output" | grep '"type":"plan"' | head -1)
     
-    # Second try: find JSON object in raw output
-    if [[ -z "$plan_json" || ! "$plan_json" =~ \"steps\" ]]; then
-        plan_json=$(echo "$plan_raw" | grep -o '{[^{}]*"steps"[^{}]*\[[^][]*\][^{}]*}' | head -1)
+    if [[ -z "$plan_line" ]]; then
+        # Try to extract from payloads
+        plan_line=$(echo "$plan_output" | grep -o '{"type":"plan"[^}]*"steps"[^]]*][^}]*}' | head -1)
     fi
     
-    # Third try: extract between first { and last }
-    if [[ -z "$plan_json" || ! "$plan_json" =~ \"steps\" ]]; then
-        plan_json=$(echo "$plan_raw" | sed -n 's/.*\({.*"steps".*}\).*/\1/p' | head -1)
-    fi
-    
-    log "[hive-spawn] Extracted plan: ${plan_json:0:200}..."
-    
-    # Parse steps using jq if available, else basic parsing
-    if command -v jq &> /dev/null && [[ -n "$plan_json" ]]; then
-        step_count=$(echo "$plan_json" | jq '.steps | length' 2>/dev/null || echo "1")
-    else
-        # Fallback: count step-N patterns
-        step_count=$(echo "$plan_json" | grep -o '"step-[0-9]*"' | wc -l | tr -d ' ')
-    fi
-    
-    if [[ -z "$plan_json" || "$step_count" -eq 0 ]]; then
-        log "[hive-spawn] Could not parse plan, falling back to single-step execution"
+    if [[ -z "$plan_line" ]]; then
+        log "[hive-spawn] Could not parse plan, falling back to single-step"
+        emit '{"type":"fallback","reason":"plan_parse_failed"}'
         openclaw agent --local --session-id "hive-$MENTION_ID" --message "$TASK_MESSAGE" --json 2>&1
         exit $?
     fi
     
+    # Parse step count
+    step_count=$(echo "$plan_line" | jq -r '.steps | length // 0' 2>/dev/null)
+    
+    if [[ -z "$step_count" || "$step_count" -eq 0 ]]; then
+        log "[hive-spawn] No steps found in plan"
+        emit '{"type":"fallback","reason":"no_steps"}'
+        openclaw agent --local --session-id "hive-$MENTION_ID" --message "$TASK_MESSAGE" --json 2>&1
+        exit $?
+    fi
+    
+    emit "$plan_line"
+    emit "{\"type\":\"plan_parsed\",\"step_count\":$step_count}"
     log "[hive-spawn] Plan has $step_count steps"
     
     # ========================================
     # PHASE 2: Execute each step
     # ========================================
+    emit '{"type":"phase","name":"execution"}'
     
-    all_output=""
+    all_success=true
     current_step=1
     
     while [[ $current_step -le $step_count ]]; do
-        # Extract step description
-        if command -v jq &> /dev/null; then
-            step_desc=$(echo "$plan_json" | jq -r ".steps[$((current_step-1))].description" 2>/dev/null)
-            step_criteria=$(echo "$plan_json" | jq -r ".steps[$((current_step-1))].success_criteria[]" 2>/dev/null | tr '\n' ', ')
-        else
-            # Basic extraction
-            step_desc=$(echo "$plan_json" | grep -o "\"step-$current_step\"" -A5 | grep -o '"description":"[^"]*"' | head -1 | sed 's/"description":"//;s/"$//')
-        fi
+        # Extract step info
+        step_desc=$(echo "$plan_line" | jq -r ".steps[$((current_step-1))].description // empty" 2>/dev/null)
+        step_criteria=$(echo "$plan_line" | jq -r ".steps[$((current_step-1))].success_criteria // []" 2>/dev/null)
         
-        log "[hive-spawn] Step $current_step/$step_count: ${step_desc:0:100}"
+        emit "{\"type\":\"step_start\",\"step\":$current_step,\"total\":$step_count,\"description\":\"$step_desc\"}"
+        log "[hive-spawn] Step $current_step/$step_count: ${step_desc:0:80}"
         
-        # Build step-specific prompt
-        step_prompt="Execute this step EXACTLY: $step_desc
+        # Build step prompt
+        step_prompt="Execute this step EXACTLY. Do NOT do anything else.
 
+Step: $step_desc
 Success criteria: $step_criteria
 
-Complete ONLY this step. Do NOT do anything else.
-Report what was done and whether criteria passed."
+Instructions:
+1. Complete ONLY this step
+2. Verify each success criterion is met
+3. Report what was done
+
+Output a JSON line when done:
+{\"type\":\"step_result\",\"step\":$current_step,\"success\":true,\"summary\":\"what was done\"}
+Or if failed:
+{\"type\":\"step_result\",\"step\":$current_step,\"success\":false,\"error\":\"what went wrong\"}"
 
         # Execute step
         step_output=$(openclaw agent --local --session-id "hive-$MENTION_ID-step$current_step" --message "$step_prompt" --json 2>&1)
+        step_exit=$?
         
-        if [[ $? -ne 0 ]]; then
+        if [[ $step_exit -ne 0 ]]; then
+            emit "{\"type\":\"step_error\",\"step\":$current_step,\"error\":\"Execution failed with exit code $step_exit\"}"
             log "[hive-spawn] Step $current_step failed"
-            echo "### Step $current_step FAILED ###"
-            echo "$step_output"
-            exit 1
+            all_success=false
+            break
         fi
         
-        log "[hive-spawn] Step $current_step completed successfully"
+        # Check for success in output
+        if echo "$step_output" | grep -q '"success":true'; then
+            emit "{\"type\":\"step_complete\",\"step\":$current_step,\"success\":true}"
+            log "[hive-spawn] Step $current_step completed successfully"
+        else
+            emit "{\"type\":\"step_complete\",\"step\":$current_step,\"success\":false}"
+            log "[hive-spawn] Step $current_step completed without success marker"
+            all_success=false
+        fi
         
-        # Append to combined output
-        all_output+="### Step $current_step: ${step_desc:0:80} ###\n$step_output\n\n"
+        # Include step output
+        echo "$step_output"
         
         current_step=$((current_step + 1))
     done
     
-    log "[hive-spawn] All $step_count steps completed"
-    echo "$all_output"
-    echo ""
-    echo "=== TASK COMPLETED ==="
-    echo "Steps executed: $step_count"
+    # ========================================
+    # PHASE 3: Final summary
+    # ========================================
+    if [[ "$all_success" == "true" ]]; then
+        emit "{\"type\":\"done\",\"status\":\"success\",\"steps_executed\":$((current_step-1))}"
+        log "[hive-spawn] All steps completed successfully"
+    else
+        emit "{\"type\":\"done\",\"status\":\"partial\",\"steps_executed\":$((current_step-1))}"
+        log "[hive-spawn] Completed with some failures at step $current_step"
+    fi
     
 else
     # ========================================
-    # Normal single-step execution
+    # Normal single-step execution (no --step)
     # ========================================
     openclaw agent --local --session-id "hive-$MENTION_ID" --message "$MENTION_CONTENT" --json 2>&1 || {
         log "[hive-spawn] Agent failed with exit code $?"
