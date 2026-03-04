@@ -44,90 +44,101 @@ For each step, provide:
 2. Success criteria (verifiable conditions)
 3. Dependencies on previous steps (if any)
 
-Output a JSON array of steps in this exact format:
-\`\`\`json
-{
-  \"steps\": [
-    {
-      \"id\": \"step-1\",
-      \"description\": \"...\"，
-      \"success_criteria\": [\"...\"],
-      \"dependencies\": []
-    }
-  ]
-}
-\`\`\`
+Output ONLY valid JSON, no markdown, no code blocks, no other text:
+{\"steps\":[{\"id\":\"step-1\",\"description\":\"...\",\"success_criteria\":[\"...\"],\"dependencies\":[]}]}
 
-Only output the JSON, no other text."
+Analyze the task and output the JSON plan now."
 
-    PLAN_OUTPUT=$(openclaw agent --local --session-id "hive-$MENTION_ID-planner" --message "$PLANNER_PROMPT" --json 2>&1)
+    plan_raw=$(openclaw agent --local --session-id "hive-$MENTION_ID-planner" --message "$PLANNER_PROMPT" --json 2>&1)
     
     if [[ $? -ne 0 ]]; then
         log "[hive-spawn] Planning phase failed"
-        echo "$PLAN_OUTPUT"
+        echo "$plan_raw"
         exit 1
     fi
     
-    # Extract steps from plan
-    STEPS=$(echo "$PLAN_OUTPUT" | grep -o '{"steps":.*}' | head -1)
+    # Extract JSON from response - handle various output formats
+    # First try: extract from markdown code blocks
+    plan_json=$(echo "$plan_raw" | sed -n '/```/,/```/p' | sed '1d;$d' | tr -d '\n' | tr -d '\r')
     
-    if [[ -z "$STEPS" ]]; then
-        log "[hive-spawn] Could not parse plan, falling back to single-step execution"
-        echo "$PLAN_OUTPUT"
-        exit 0
+    # Second try: find JSON object in raw output
+    if [[ -z "$plan_json" || ! "$plan_json" =~ \"steps\" ]]; then
+        plan_json=$(echo "$plan_raw" | grep -o '{[^{}]*"steps"[^{}]*\[[^][]*\][^{}]*}' | head -1)
     fi
     
-    log "[hive-spawn] Plan received, extracting steps"
+    # Third try: extract between first { and last }
+    if [[ -z "$plan_json" || ! "$plan_json" =~ \"steps\" ]]; then
+        plan_json=$(echo "$plan_raw" | sed -n 's/.*\({.*"steps".*}\).*/\1/p' | head -1)
+    fi
     
-    # Count steps
-    STEP_COUNT=$(echo "$STEPS" | grep -o '"id":' | wc -l | tr -d ' ')
-    log "[hive-spawn] Found $STEP_COUNT steps"
+    log "[hive-spawn] Extracted plan: ${plan_json:0:200}..."
+    
+    # Parse steps using jq if available, else basic parsing
+    if command -v jq &> /dev/null && [[ -n "$plan_json" ]]; then
+        step_count=$(echo "$plan_json" | jq '.steps | length' 2>/dev/null || echo "1")
+    else
+        # Fallback: count step-N patterns
+        step_count=$(echo "$plan_json" | grep -o '"step-[0-9]*"' | wc -l | tr -d ' ')
+    fi
+    
+    if [[ -z "$plan_json" || "$step_count" -eq 0 ]]; then
+        log "[hive-spawn] Could not parse plan, falling back to single-step execution"
+        openclaw agent --local --session-id "hive-$MENTION_ID" --message "$TASK_MESSAGE" --json 2>&1
+        exit $?
+    fi
+    
+    log "[hive-spawn] Plan has $step_count steps"
     
     # ========================================
     # PHASE 2: Execute each step
     # ========================================
     
-    CURRENT_STEP=1
-    STEP_IDS=$(echo "$STEPS" | grep -o '"step-[0-9]*"' | sort -u)
+    all_output=""
+    current_step=1
     
-    for STEP_ID in $STEP_IDS; do
+    while [[ $current_step -le $step_count ]]; do
         # Extract step description
-        STEP_DESC=$(echo "$STEPS" | grep -A5 "\"$STEP_ID\"" | grep -o '"description": *"[^"]*"' | head -1 | sed 's/"description": *"\(.*\)"/\1/')
-        STEP_CRITERIA=$(echo "$STEPS" | grep -A10 "\"$STEP_ID\"" | grep -o '"success_criteria": *\[[^\]]*\]' | head -1)
+        if command -v jq &> /dev/null; then
+            step_desc=$(echo "$plan_json" | jq -r ".steps[$((current_step-1))].description" 2>/dev/null)
+            step_criteria=$(echo "$plan_json" | jq -r ".steps[$((current_step-1))].success_criteria[]" 2>/dev/null | tr '\n' ', ')
+        else
+            # Basic extraction
+            step_desc=$(echo "$plan_json" | grep -o "\"step-$current_step\"" -A5 | grep -o '"description":"[^"]*"' | head -1 | sed 's/"description":"//;s/"$//')
+        fi
         
-        log "[hive-spawn] Step $CURRENT_STEP/$STEP_COUNT: $STEP_DESC"
+        log "[hive-spawn] Step $current_step/$step_count: ${step_desc:0:100}"
         
         # Build step-specific prompt
-        STEP_PROMPT="Execute this step: $STEP_DESC
+        step_prompt="Execute this step EXACTLY: $step_desc
 
-Success criteria: $STEP_CRITERIA
+Success criteria: $step_criteria
 
-Complete ONLY this step. Verify success criteria are met before finishing.
-Report what was done and whether each criterion passed."
+Complete ONLY this step. Do NOT do anything else.
+Report what was done and whether criteria passed."
 
         # Execute step
-        STEP_OUTPUT=$(openclaw agent --local --session-id "hive-$MENTION_ID-step$CURRENT_STEP" --message "$STEP_PROMPT" --json 2>&1)
+        step_output=$(openclaw agent --local --session-id "hive-$MENTION_ID-step$current_step" --message "$step_prompt" --json 2>&1)
         
         if [[ $? -ne 0 ]]; then
-            log "[hive-spawn] Step $CURRENT_STEP failed"
-            echo "Step $CURRENT_STEP FAILED:\n$STEP_OUTPUT"
+            log "[hive-spawn] Step $current_step failed"
+            echo "### Step $current_step FAILED ###"
+            echo "$step_output"
             exit 1
         fi
         
-        log "[hive-spawn] Step $CURRENT_STEP completed"
+        log "[hive-spawn] Step $current_step completed successfully"
         
-        # Output step result for Hive to capture
-        echo "### Step $CURRENT_STEP: $STEP_DESC"
-        echo "$STEP_OUTPUT"
-        echo ""
+        # Append to combined output
+        all_output+="### Step $current_step: ${step_desc:0:80} ###\n$step_output\n\n"
         
-        CURRENT_STEP=$((CURRENT_STEP + 1))
+        current_step=$((current_step + 1))
     done
     
-    log "[hive-spawn] All steps completed"
+    log "[hive-spawn] All $step_count steps completed"
+    echo "$all_output"
     echo ""
     echo "=== TASK COMPLETED ==="
-    echo "Steps executed: $((CURRENT_STEP - 1))"
+    echo "Steps executed: $step_count"
     
 else
     # ========================================
