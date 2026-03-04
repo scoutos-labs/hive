@@ -48,23 +48,17 @@ if echo "$MENTION_CONTENT" | grep -qE '\-\-step\b'; then
     log "[hive-spawn] Phase 1: Planning"
     emit '{"type":"phase","name":"planning"}'
     
-    PLANNER_PROMPT="You are a task planner. Break down this task into sequential steps.
+    PLANNER_PROMPT="You are a TASK PLANNER. You DO NOT execute tasks. You ONLY create plans.
+
+IMPORTANT: DO NOT write code. DO NOT create files. DO NOT execute anything.
+Your ONLY job is to output a JSON plan.
 
 TASK: $TASK_MESSAGE
 
-For each step, define:
-- id: step-N (incrementing number)
-- description: what to do
-- success_criteria: list of verifiable conditions
-- dependencies: which steps must complete first (empty for first step)
+Create a step-by-step plan. Output ONLY this JSON, nothing else:
+{\"type\":\"plan\",\"steps\":[{\"id\":\"step-1\",\"description\":\"What to do\",\"success_criteria\":[\"verifiable condition\"],\"dependencies\":[]}]}
 
-Output ONLY JSON lines, one per line, no markdown, no code blocks:
-
-First line MUST be:
-{\"type\":\"plan\",\"steps\":[{\"id\":\"step-1\",\"description\":\"...\",\"success_criteria\":[\"...\"],\"dependencies\":[]},...]}
-
-Then confirm:
-{\"type\":\"plan_complete\",\"step_count\":N}"
+NO explanation. NO code. NO markdown. ONLY the JSON object."
 
     plan_output=$(openclaw agent --local --session-id "hive-$MENTION_ID-planner" --message "$PLANNER_PROMPT" --json 2>&1)
     
@@ -75,12 +69,25 @@ Then confirm:
         exit 1
     fi
     
-    # Extract plan line from output
-    plan_line=$(echo "$plan_output" | grep '"type":"plan"' | head -1)
+    # Extract plan line from output - handle openclaw's payloads format
+    # The output is: {"payloads":[{"text":"json content here"}],...}
+    # We need to extract the text and find the plan JSON
     
+    plan_text=$(echo "$plan_output" | jq -r '.payloads[0].text // empty' 2>/dev/null)
+    
+    if [[ -n "$plan_text" ]]; then
+        # Plan text found - extract JSON from it
+        plan_line=$(echo "$plan_text" | grep -o '{"type":"plan"[^}]*"steps"[^]]*][^}]*}' | head -1)
+    fi
+    
+    # Fallback: search raw output for plan
     if [[ -z "$plan_line" ]]; then
-        # Try to extract from payloads
         plan_line=$(echo "$plan_output" | grep -o '{"type":"plan"[^}]*"steps"[^]]*][^}]*}' | head -1)
+    fi
+    
+    # Fallback: look for plan in code blocks
+    if [[ -z "$plan_line" ]]; then
+        plan_line=$(echo "$plan_output" | sed -n '/```/,/```/p' | grep -o '{"type":"plan"[^}]*"steps"[^]]*][^}]*}' | head -1)
     fi
     
     if [[ -z "$plan_line" ]]; then
