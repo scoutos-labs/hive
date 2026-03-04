@@ -48,17 +48,20 @@ if echo "$MENTION_CONTENT" | grep -qE '\-\-step\b'; then
     log "[hive-spawn] Phase 1: Planning"
     emit '{"type":"phase","name":"planning"}'
     
-    PLANNER_PROMPT="You are a TASK PLANNER. You DO NOT execute tasks. You ONLY create plans.
+    # Planner prompt - be EXTREMELY explicit that this is planning ONLY
+    PLANNER_PROMPT="STOP. READ CAREFULLY.
 
-IMPORTANT: DO NOT write code. DO NOT create files. DO NOT execute anything.
-Your ONLY job is to output a JSON plan.
+You are NOT an executor. You are ONLY a planner.
+DO NOT create files. DO NOT write code. DO NOT execute anything.
+Your ONLY output should be a JSON plan.
 
-TASK: $TASK_MESSAGE
+The task is: $TASK_MESSAGE
 
-Create a step-by-step plan. Output ONLY this JSON, nothing else:
-{\"type\":\"plan\",\"steps\":[{\"id\":\"step-1\",\"description\":\"What to do\",\"success_criteria\":[\"verifiable condition\"],\"dependencies\":[]}]}
+Your response must be ONLY this JSON:
+{\"type\":\"plan\",\"steps\":[{\"id\":\"step-1\",\"description\":\"First step description\",\"success_criteria\":[\"something that can be verified\"],\"dependencies\":[]}]}
 
-NO explanation. NO code. NO markdown. ONLY the JSON object."
+If you create a file, write code, or do anything other than outputting JSON, you have FAILED.
+Output the plan now. JSON ONLY. No other text."
 
     plan_output=$(openclaw agent --local --session-id "hive-$MENTION_ID-planner" --message "$PLANNER_PROMPT" --json 2>&1)
     
