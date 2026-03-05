@@ -246,6 +246,7 @@ export async function spawnAgent(
     MENTION_ID: mention.id,
     ROOM_ID: room.id,
     ROOM_NAME: room.name,
+    ROOM_CWD: room.cwd || agent.cwd || '',
     POST_ID: post.id,
     FROM_AGENT: mention.mentioningAgentId || 'unknown',
     MENTION_CONTENT: post.content,
