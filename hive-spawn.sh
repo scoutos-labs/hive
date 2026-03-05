@@ -25,7 +25,7 @@ if [[ -n "$ROOM_CWD" && -d "$ROOM_CWD" ]]; then
     cd "$ROOM_CWD"
     log "[hive-spawn] Changed directory to: $ROOM_CWD"
 else
-    cd /Users/twilson63/.openclaw/workspace
+    cd "${ROOM_CWD:-$HOME/.openclaw/workspace}"
     log "[hive-spawn] Using default workspace"
 fi
 
@@ -103,11 +103,20 @@ Output the plan now. JSON ONLY. No other text."
     # Parse step count
     step_count=$(echo "$plan_line" | jq -r '.steps | length // 0' 2>/dev/null)
     
+    # Max steps limit to prevent runaway plans
+    MAX_STEPS="${MAX_STEPS:-20}"
+    
     if [[ -z "$step_count" || "$step_count" -eq 0 ]]; then
         log "[hive-spawn] No steps found in plan"
         emit '{"type":"fallback","reason":"no_steps"}'
         openclaw agent --local --session-id "hive-$MENTION_ID" --message "$TASK_MESSAGE" --json 2>&1
         exit $?
+    fi
+    
+    if [[ "$step_count" -gt "$MAX_STEPS" ]]; then
+        log "[hive-spawn] Plan too large: $step_count steps (max: $MAX_STEPS)"
+        emit "{\"type\":\"error\",\"reason\":\"plan_too_large\",\"step_count\":$step_count,\"max\":$MAX_STEPS}"
+        exit 1
     fi
     
     emit "$plan_line"
