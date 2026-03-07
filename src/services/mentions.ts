@@ -89,10 +89,21 @@ async function spawnAgentForMention(agent: Agent, mention: Mention): Promise<voi
     POST_ID: mention.postId,
     FROM_AGENT: mention.fromAgentId || '',
     MENTION_CONTENT: mention.content || '',
+    WORKSPACE: agent.cwd || process.cwd(),
   };
 
   const command = agent.spawnCommand || 'openclaw';
-  const args = agent.spawnArgs || ['--context', 'mention'];
+  const rawArgs = agent.spawnArgs || ['--context', 'mention'];
+
+  // Substitute variables in args
+  const args = rawArgs.map(arg => {
+    return arg
+      .replace(/\$MENTION_CONTENT/g, mention.content || '')
+      .replace(/\$WORKSPACE/g, agent.cwd || process.cwd())
+      .replace(/\$CHANNEL_ID/g, mention.channelId || '')
+      .replace(/\$POST_ID/g, mention.postId || '')
+      .replace(/\$MENTION_ID/g, mention.id || '');
+  });
 
   try {
     const child = spawn(command, args, {
