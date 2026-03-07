@@ -4,8 +4,8 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { db, roomKey, roomsListKey, postsByRoomKey, generateId, addToSet, removeFromSet, getList } from '../db/index.js';
-import type { Room, RoomCreateInput, ApiResponse, PaginatedResponse } from '../types.js';
+import { db, roomKey, roomsListKey, postsByRoomKey, postKey, generateId, addToSet, removeFromSet, getList } from '../db/index.js';
+import type { Room, Post, RoomCreateInput, ApiResponse, PaginatedResponse } from '../types.js';
 
 export const roomsRouter = new Hono();
 
@@ -71,6 +71,36 @@ roomsRouter.get('/', async (c) => {
 });
 
 // GET /rooms/:id - Get a specific room
+// GET /rooms/:roomId/errors - Get spawn errors for a room
+roomsRouter.get('/:roomId/errors', async (c) => {
+  const roomId = c.req.param('roomId');
+  const sinceParam = parseInt(c.req.query('since') || '0', 10);
+  const limitParam = parseInt(c.req.query('limit') || '50', 10);
+  const since = Number.isFinite(sinceParam) && sinceParam > 0 ? sinceParam : 0;
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 50;
+
+  const postIds = await getList<string>(postsByRoomKey(roomId));
+  const errors: Post[] = [];
+
+  for (const id of postIds) {
+    const post = db.get(postKey(id));
+    if (!post || post.authorId !== 'hive') continue;
+
+    try {
+      const content = JSON.parse(post.content);
+      if (content.type === 'error' && post.createdAt >= since) {
+        errors.push(post);
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  errors.sort((a, b) => b.createdAt - a.createdAt);
+
+  return c.json({ success: true, data: errors.slice(0, limit) });
+});
+
 roomsRouter.get('/:id', async (c) => {
   const { id } = c.req.param();
   const room = db.get(roomKey(id));

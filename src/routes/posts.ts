@@ -134,6 +134,39 @@ postsRouter.get('/', async (c) => {
   });
 });
 
+// GET /posts/errors - Get all errors across rooms
+postsRouter.get('/errors', async (c) => {
+  const sinceParam = parseInt(c.req.query('since') || '0', 10);
+  const limitParam = parseInt(c.req.query('limit') || '50', 10);
+  const since = Number.isFinite(sinceParam) && sinceParam > 0 ? sinceParam : 0;
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 50;
+
+  const roomIds = await getList<string>(roomsListKey());
+  const errors: Post[] = [];
+
+  for (const roomId of roomIds) {
+    const postIds = await getList<string>(postsByRoomKey(roomId));
+
+    for (const id of postIds) {
+      const post = db.get(postKey(id));
+      if (!post || post.authorId !== 'hive') continue;
+
+      try {
+        const content = JSON.parse(post.content);
+        if (content.type === 'error' && post.createdAt >= since) {
+          errors.push(post);
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  errors.sort((a, b) => b.createdAt - a.createdAt);
+
+  return c.json({ success: true, data: errors.slice(0, limit) });
+});
+
 // GET /posts/:id - Get a specific post
 postsRouter.get('/:id', async (c) => {
   const { id } = c.req.param();
