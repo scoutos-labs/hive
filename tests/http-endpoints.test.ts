@@ -185,13 +185,13 @@ describe('agents endpoints', () => {
     expect(duplicate.body.success).toBe(false);
   });
 
-  it('returns validation and not found errors for agent operations', async () => {
-    const invalid = await requestJson('/agents', {
+  it('supports default spawn settings and not found errors for agent operations', async () => {
+    const withDefaults = await requestJson('/agents', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: 'x', name: 'Missing command' }),
     });
-    expect(invalid.response.status).toBe(400);
+    expect(withDefaults.response.status).toBe(201);
 
     const missingId = `agent-missing-${randomUUID()}`;
     const getOne = await requestJson(`/agents/${missingId}`);

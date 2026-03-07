@@ -346,7 +346,7 @@ export async function spawnAgent(
     HIVE_CHAIN_DEPTH: String(chainDepth),
   };
   
-  const command = agent.spawnCommand.trim();
+  const command = (agent.spawnCommand || 'openclaw').trim();
   if (!command) {
     await updateMentionStatus(mention.id, 'failed', undefined, 'Agent spawnCommand is empty');
     await emitHiveEvent(
@@ -379,7 +379,7 @@ export async function spawnAgent(
     return;
   }
 
-  const args = agent.spawnArgs || [];
+  const args = agent.spawnArgs || ['--context', 'mention'];
 
   // Validate args before spawning
   const argsError = validateSpawnArgs(args);

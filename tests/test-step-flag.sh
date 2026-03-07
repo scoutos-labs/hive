@@ -1,11 +1,11 @@
 #!/bin/bash
-# Tests for hive-spawn.sh --step flag functionality
+# Tests for hive-openclaw-spawn.sh --step flag functionality
 # Run: bash tests/test-step-flag.sh
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HIVE_SPAWN="$SCRIPT_DIR/../hive-spawn.sh"
+HIVE_SPAWN="$SCRIPT_DIR/../hive-openclaw-spawn.sh"
 
 # Test helper functions
 test_count=0

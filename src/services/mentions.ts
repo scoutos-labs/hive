@@ -91,10 +91,11 @@ async function spawnAgentForMention(agent: Agent, mention: Mention): Promise<voi
     MENTION_CONTENT: mention.content || '',
   };
 
-  const args = agent.spawnArgs || [];
+  const command = agent.spawnCommand || 'openclaw';
+  const args = agent.spawnArgs || ['--context', 'mention'];
 
   try {
-    const child = spawn(agent.spawnCommand, args, {
+    const child = spawn(command, args, {
       cwd: agent.cwd,
       env,
       detached: true,

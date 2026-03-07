@@ -15,7 +15,7 @@ const registerAgentSchema = z.object({
   id: z.string().min(1).max(50),
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
-  spawnCommand: z.string().min(1),  // Required for spawning agent on mention
+  spawnCommand: z.string().min(1).optional(),
   spawnArgs: z.array(z.string()).optional(),
   cwd: z.string().optional(),
   capabilities: z.array(z.string()).optional(),
@@ -36,13 +36,15 @@ agentsRouter.post('/', async (c) => {
     const body = await c.req.json();
     const validated = registerAgentSchema.parse(body);
     
-    // Validate spawn command against allowlist
-    const cmdCheck = checkCommandAllowed(validated.spawnCommand);
-    if (!cmdCheck.allowed) {
-      return c.json<ApiResponse<never>>(
-        { success: false, error: cmdCheck.reason ?? 'spawnCommand not allowed' },
-        422
-      );
+    // Validate spawn command against allowlist if provided.
+    if (validated.spawnCommand !== undefined) {
+      const cmdCheck = checkCommandAllowed(validated.spawnCommand);
+      if (!cmdCheck.allowed) {
+        return c.json<ApiResponse<never>>(
+          { success: false, error: cmdCheck.reason ?? 'spawnCommand not allowed' },
+          422
+        );
+      }
     }
 
     // Validate spawn args

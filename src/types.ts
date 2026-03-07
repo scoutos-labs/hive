@@ -69,7 +69,7 @@ export interface Agent {
   id: string;
   name: string;
   description?: string;
-  spawnCommand: string;
+  spawnCommand?: string;
   spawnArgs?: string[];
   cwd?: string;
   capabilities?: string[];
@@ -92,7 +92,7 @@ export interface RegisterAgentBody {
   id: string;
   name: string;
   description?: string;
-  spawnCommand: string;
+  spawnCommand?: string;
   spawnArgs?: string[];
   cwd?: string;
   capabilities?: string[];
