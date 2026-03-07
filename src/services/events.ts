@@ -6,7 +6,6 @@ import {
   addToSet,
   getList,
 } from '../db/index.js';
-import { dispatchEventToWebhooks } from './webhooks.js';
 import type { HiveEvent, HiveEventType } from '../types.js';
 
 type EventListener = (event: HiveEvent) => void;
@@ -17,7 +16,6 @@ const listeners = new Map<string, EventListener>();
  * Emits an event to three sinks in order:
  * 1) durable event log in LMDB,
  * 2) in-process SSE listeners,
- * 3) async webhook fanout.
  *
  * The durable write happens first so late subscribers can replay from storage.
  */
@@ -44,10 +42,6 @@ export async function emitHiveEvent<TPayload extends Record<string, unknown>>(
       console.error('[events] listener error', error);
     }
   }
-
-  dispatchEventToWebhooks(event).catch((error) => {
-    console.error('[events] webhook dispatch error', error);
-  });
 
   return event;
 }

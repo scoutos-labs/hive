@@ -11,6 +11,8 @@ import {
   db, 
   agentKey, 
   subKey, 
+  subsByAgentKey,
+  subsByTargetKey,
   mentionKey, 
   mentionsByAgentKey,
   mentionsByRoomKey,
@@ -24,6 +26,7 @@ import type { Agent, Mention, Room, Post } from '../types.js';
 import { emitHiveEvent } from './events.js';
 import { getSpawnConfig } from './spawn-config.js';
 import { checkCommandAllowed, validateSpawnArgs } from './spawn-allowlist.js';
+import { createPost } from './rooms.js';
 
 // ============================================================================
 // Concurrency tracking
@@ -111,6 +114,56 @@ export async function isAgentSubscribedToRoom(agentId: string, roomId: string): 
   }
   
   return false;
+}
+
+async function createSubscription(input: {
+  agentId: string;
+  targetType: 'room' | 'agent' | 'mention';
+  targetId: string;
+}): Promise<void> {
+  const subId = generateId('sub');
+  const now = Date.now();
+
+  await db.put(subKey(subId), {
+    id: subId,
+    agentId: input.agentId,
+    targetType: input.targetType,
+    targetId: input.targetId,
+    createdAt: now,
+    active: true,
+  });
+
+  await addToSet(subsByAgentKey(input.agentId), subId);
+  await addToSet(subsByTargetKey(input.targetType, input.targetId), subId);
+}
+
+async function createSpawnErrorPost(params: {
+  roomId: string;
+  mentionId: string;
+  agentId: string;
+  spawnError?: string;
+  exitCode?: number | null;
+}): Promise<void> {
+  const { roomId, mentionId, agentId, spawnError, exitCode } = params;
+  if (exitCode === 0 && !spawnError) return;
+
+  const errorMessage = spawnError || `Process exited with code ${exitCode}`;
+
+  try {
+    await createPost(roomId, {
+      authorId: 'hive',
+      content: JSON.stringify({
+        type: 'error',
+        mentionId,
+        agentId,
+        error: errorMessage,
+        exitCode: exitCode ?? null,
+        timestamp: Date.now(),
+      }),
+    });
+  } catch (postErr) {
+    console.error('[spawn] Failed to post error:', postErr);
+  }
 }
 
 // ============================================================================
@@ -467,6 +520,13 @@ export async function spawnAgent(
       } else {
         console.error(`[spawn] Agent ${agentId} failed with code ${code}`);
         await updateMentionStatus(mention.id, 'failed', output, error);
+        await createSpawnErrorPost({
+          roomId: post.roomId,
+          mentionId: mention.id,
+          agentId: agent.id,
+          spawnError: error,
+          exitCode: code,
+        });
         await emitHiveEvent(
           'task.failed',
           {
@@ -494,6 +554,13 @@ export async function spawnAgent(
 
       console.error(`[spawn] Failed to spawn agent ${agentId}:`, err.message);
       await updateMentionStatus(mention.id, 'failed', undefined, err.message);
+      await createSpawnErrorPost({
+        roomId: post.roomId,
+        mentionId: mention.id,
+        agentId: agent.id,
+        spawnError: err.message,
+        exitCode: null,
+      });
       await emitHiveEvent(
         'task.failed',
         {
@@ -561,13 +628,23 @@ export async function processMentions(post: Post, room: Room, chainDepth: number
     }
     
     // Check if agent is subscribed to the room
-    const isSubscribed = await isAgentSubscribedToRoom(mentionedAgentId, post.roomId);
+    let isSubscribed = await isAgentSubscribedToRoom(mentionedAgentId, post.roomId);
     if (!isSubscribed) {
-      console.log(`[mentions] Agent ${mentionedAgentId} not subscribed to room ${post.roomId}, skipping spawn`);
+      // AUTO-SUBSCRIBE: Create subscription for first-time mentions
+      try {
+        await createSubscription({
+          agentId: agent.id,
+          targetType: 'room',
+          targetId: post.roomId,
+        });
+        console.log(`[posts] Auto-subscribed agent ${agent.id} to room ${post.roomId}`);
+        isSubscribed = true;
+      } catch (err) {
+        console.error(`[posts] Failed to auto-subscribe ${agent.id}:`, err);
+        continue;
+      }
     }
     
-    // Mention records are created even for unsubscribed agents so operators can
-    // audit intent and see why no spawn was triggered.
     // Create mention record
     const mention = await createMention(
       post.id,

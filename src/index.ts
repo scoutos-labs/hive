@@ -15,11 +15,7 @@ import { agentsRouter } from './routes/agents.js';
 import { postsRouter } from './routes/posts.js';
 import { subscriptionsRouter } from './routes/subscriptions.js';
 import { mentionsRouter } from './routes/mentions.js';
-import { webhookSubscriptionsRouter } from './routes/webhook-subscriptions.js';
-import { webhookDeliveriesRouter } from './routes/webhook-deliveries.js';
 import { eventsRouter } from './routes/events.js';
-import { elevenLabsProxyRouter } from './routes/elevenlabs-proxy.js';
-import { observerRouter } from './routes/observer.js';
 import { closeDatabase } from './db/index.js';
 
 // ============================================================================
@@ -61,11 +57,7 @@ export function createApp() {
   app.route('/posts', postsRouter);
   app.route('/subscriptions', subscriptionsRouter);
   app.route('/mentions', mentionsRouter);
-  app.route('/webhook-subscriptions', webhookSubscriptionsRouter);
-  app.route('/webhook-deliveries', webhookDeliveriesRouter);
   app.route('/events', eventsRouter);
-  app.route('/proxy/elevenlabs', elevenLabsProxyRouter);
-  app.route('/observer', observerRouter);
 
 // ============================================================================
 // Error Handling
