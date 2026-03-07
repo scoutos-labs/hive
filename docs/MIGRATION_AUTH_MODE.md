@@ -40,8 +40,8 @@ Set:
 
 Validation checklist:
 
-- Anonymous `GET /rooms` works
-- Anonymous `POST /rooms` returns `401`
+- Anonymous `GET /channels` works
+- Anonymous `POST /channels` returns `401`
 - `viewer` token still cannot mutate (`403`)
 - `operator` token can `POST`/`PUT`/`PATCH`
 - Only `admin` can `DELETE`
