@@ -569,3 +569,131 @@ body {
 .sidebar-item.active .sidebar-item-icon {
   color: var(--accent);
 }
+
+/* Mention autocomplete */
+.mention-autocomplete {
+  position: absolute;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  max-height: 200px;
+  overflow-y: auto;
+  min-width: 200px;
+}
+
+.mention-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.mention-option:hover {
+  background: var(--bg-hover);
+}
+
+.mention-option-icon {
+  font-size: 16px;
+}
+
+.mention-option-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.mention-option-id {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* Composer positioning */
+.composer {
+  position: relative;
+}
+
+/* Active agents */
+.agent-item.running {
+  background: rgba(245, 160, 24, 0.1);
+  border-left: 2px solid var(--warning);
+}
+
+.agent-item.running .agent-item-status {
+  color: var(--warning);
+}
+
+/* Task progress */
+.task-item {
+  padding: 8px 12px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.task-item:hover {
+  background: var(--bg-hover);
+}
+
+.task-item-status {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.task-item-status.pending {
+  color: var(--text-muted);
+}
+
+.task-item-status.running {
+  color: var(--warning);
+}
+
+.task-item-status.completed {
+  color: var(--success);
+}
+
+.task-item-status.failed {
+  color: var(--error);
+}
+
+.task-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-item-agent {
+  font-weight: 500;
+}
+
+.task-item-channel {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* New channel button */
+.sidebar-new-channel {
+  margin: 8px 12px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sidebar-new-channel:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

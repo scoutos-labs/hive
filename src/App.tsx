@@ -1,7 +1,52 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useChannels, useAgents, useChannel, useSSE } from './hooks/data';
 import { api, type Post } from './api/hive';
 import './styles.css';
+
+// Mention autocomplete component
+function MentionAutocomplete({
+  query,
+  agents,
+  position,
+  onSelect,
+  onClose
+}: {
+  query: string;
+  agents: { id: string; name: string }[];
+  position: { top: number; left: number };
+  onSelect: (agentId: string) => void;
+  onClose: () => void;
+}) {
+  const filtered = useMemo(() => {
+    if (!query) return agents;
+    const q = query.toLowerCase();
+    return agents.filter(a => 
+      a.id.toLowerCase().includes(q) || 
+      a.name.toLowerCase().includes(q)
+    );
+  }, [query, agents]);
+
+  if (filtered.length === 0) return null;
+
+  return (
+    <div 
+      className="mention-autocomplete"
+      style={{ top: position.top, left: position.left }}
+    >
+      {filtered.map(agent => (
+        <div 
+          key={agent.id} 
+          className="mention-option"
+          onClick={() => onSelect(agent.id)}
+        >
+          <span className="mention-option-icon">🤖</span>
+          <span className="mention-option-name">{agent.name}</span>
+          <span className="mention-option-id">@{agent.id}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // Main App
 export default function App() {
@@ -89,6 +134,18 @@ function Sidebar({
           ))
         )}
       </div>
+
+      <button 
+        className="sidebar-new-channel"
+        onClick={() => {
+          const name = prompt('Channel name:');
+          if (name) {
+            api.createChannel({ name, createdBy: 'user' });
+          }
+        }}
+      >
+        + New Channel
+      </button>
     </aside>
   );
 }
@@ -210,7 +267,10 @@ function Message({ post }: { post: Post }) {
 function Composer({ channelId, onSend }: { channelId: string; onSend: () => void }) {
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { agents } = useAgents();
 
   const handleSubmit = async () => {
     if (!content.trim() || sending) return;
@@ -219,10 +279,11 @@ function Composer({ channelId, onSend }: { channelId: string; onSend: () => void
     try {
       await api.createPost({
         channelId,
-        authorId: 'user', // TODO: proper user ID
+        authorId: 'user',
         content: content.trim(),
       });
       setContent('');
+      setMentionQuery(null);
       onSend();
     } catch (err) {
       console.error('Failed to send message:', err);
@@ -236,6 +297,48 @@ function Composer({ channelId, onSend }: { channelId: string; onSend: () => void
       e.preventDefault();
       handleSubmit();
     }
+    if (e.key === 'Escape') {
+      setMentionQuery(null);
+    }
+  };
+
+  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setContent(value);
+
+    // Check for @mention trigger
+    const cursorPos = e.target.selectionStart;
+    const textBeforeCursor = value.substring(0, cursorPos);
+    const atMatch = textBeforeCursor.match(/@(\w*)$/);
+    
+    if (atMatch) {
+      setMentionQuery(atMatch[1]);
+      // Calculate position for dropdown
+      const textarea = e.target;
+      const rect = textarea.getBoundingClientRect();
+      setMentionPosition({
+        top: rect.height,
+        left: 0
+      });
+    } else {
+      setMentionQuery(null);
+    }
+  };
+
+  const handleMentionSelect = (agentId: string) => {
+    if (!inputRef.current) return;
+    
+    const cursorPos = inputRef.current.selectionStart;
+    const textBeforeCursor = content.substring(0, cursorPos);
+    const textAfterCursor = content.substring(cursorPos);
+    
+    // Replace @partial with @agentId
+    const newText = textBeforeCursor.replace(/@\w*$/, `@${agentId} `) + textAfterCursor;
+    setContent(newText);
+    setMentionQuery(null);
+    
+    // Focus back on input
+    inputRef.current.focus();
   };
 
   return (
@@ -246,7 +349,7 @@ function Composer({ channelId, onSend }: { channelId: string; onSend: () => void
           className="input"
           placeholder="Type a message... Use @agent to mention agents"
           value={content}
-          onChange={e => setContent(e.target.value)}
+          onChange={handleInput}
           onKeyDown={handleKeyDown}
           rows={1}
           autoFocus
@@ -259,6 +362,16 @@ function Composer({ channelId, onSend }: { channelId: string; onSend: () => void
           {sending ? 'Sending...' : 'Send'}
         </button>
       </div>
+      
+      {mentionQuery !== null && (
+        <MentionAutocomplete
+          query={mentionQuery}
+          agents={agents}
+          position={mentionPosition}
+          onSelect={handleMentionSelect}
+          onClose={() => setMentionQuery(null)}
+        />
+      )}
     </div>
   );
 }
