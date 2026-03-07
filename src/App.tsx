@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useChannels, useAgents, useChannel, useSSE, useMentions } from './hooks/data';
 import { api, type Post } from './api/hive';
+import { initNotifications, notifyAgentComplete, notifyAgentFailed } from './notifications';
 import './styles.css';
 
 // Mention autocomplete component
@@ -82,6 +83,11 @@ export default function App() {
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const { channels, loading: channelsLoading } = useChannels();
   const { mentions, refetch: refetchMentions } = useMentions();
+  
+  // Initialize notifications on mount
+  useEffect(() => {
+    initNotifications();
+  }, []);
   
   // Select first channel by default
   useEffect(() => {
@@ -214,15 +220,26 @@ function Main({ channelId, onTaskUpdate }: { channelId: string | null; onTaskUpd
   useEffect(() => {
     if (events.length > 0) {
       const lastEvent = events[events.length - 1];
-      if (lastEvent.type === 'task.completed' || lastEvent.type === 'task.failed') {
+      if (lastEvent.type === 'task.completed') {
         refetchPosts();
         onTaskUpdate();
+        const agentId = lastEvent.payload?.agentId || 'agent';
+        const channelName = channel?.name || 'unknown';
+        notifyAgentComplete(agentId, channelName);
+      }
+      if (lastEvent.type === 'task.failed') {
+        refetchPosts();
+        onTaskUpdate();
+        const agentId = lastEvent.payload?.agentId || 'agent';
+        const channelName = channel?.name || 'unknown';
+        const error = lastEvent.payload?.error;
+        notifyAgentFailed(agentId, channelName, error);
       }
       if (lastEvent.type === 'task.started') {
         onTaskUpdate();
       }
     }
-  }, [events, refetchPosts, onTaskUpdate]);
+  }, [events, refetchPosts, onTaskUpdate, channel]);
 
   return (
     <div className="main">
