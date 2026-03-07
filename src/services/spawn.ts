@@ -166,6 +166,46 @@ async function createSpawnErrorPost(params: {
   }
 }
 
+type SpawnTextEvent = {
+  type: 'text';
+  content?: unknown;
+  text?: unknown;
+};
+
+function isSpawnTextEvent(event: unknown): event is SpawnTextEvent {
+  return !!event && typeof event === 'object' && (event as { type?: unknown }).type === 'text';
+}
+
+function formatSpawnOutputForPost(stdout: string): string {
+  const trimmed = stdout.trim();
+  if (!trimmed) return '';
+
+  const lines = trimmed.split('\n').filter(line => line.trim());
+  const textEvents: SpawnTextEvent[] = [];
+
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line) as unknown;
+      if (isSpawnTextEvent(parsed)) {
+        textEvents.push(parsed);
+      }
+    } catch {
+      // If stdout is not JSONL, fall back to the raw output.
+      return trimmed;
+    }
+  }
+
+  if (textEvents.length === 0) return trimmed;
+
+  return textEvents
+    .map(event => {
+      if (typeof event.content === 'string') return event.content;
+      if (typeof event.text === 'string') return event.text;
+      return JSON.stringify(event);
+    })
+    .join('\n\n');
+}
+
 // ============================================================================
 // Create a mention record
 // ============================================================================
@@ -483,23 +523,14 @@ export async function spawnAgent(
       if (success) {
         console.log(`[spawn] Agent ${agentId} completed successfully (PID: ${child.pid})`);
         await updateMentionStatus(mention.id, 'completed', output, undefined);
-        
-        // Check for @mentions in output - if found, create a post (triggers chain)
-        // but only if we haven't exceeded the chain depth limit.
-        const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
-        const hasMentions = mentionRegex.test(stdoutBuf);
+
+        const postContent = formatSpawnOutputForPost(stdoutBuf);
         let responsePostId: string | undefined;
-        
-        if (hasMentions) {
-          if (chainDepth >= cfg.maxChainDepth) {
-            console.warn(
-              `[spawn] Chain depth limit (${cfg.maxChainDepth}) reached for mention ${mention.id}, suppressing response post`
-            );
-          } else {
-            console.log(`[spawn] Output contains mentions, creating response post (chain depth ${chainDepth + 1})`);
-            const responsePost = await createAgentResponsePost(room, agentId, stdoutBuf, post.id, chainDepth + 1);
-            responsePostId = responsePost.id;
-          }
+
+        if (postContent) {
+          console.log(`[spawn] Creating response post from agent output (chain depth ${chainDepth + 1})`);
+          const responsePost = await createAgentResponsePost(room, agentId, postContent, post.id, chainDepth + 1);
+          responsePostId = responsePost.id;
         }
 
         await emitHiveEvent(
