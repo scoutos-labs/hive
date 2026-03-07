@@ -33,7 +33,7 @@ test_fail() {
 test_start "--step flag detection"
 MENTION_CONTENT="Build a REST API --step"
 MENTION_ID="test-001"
-ROOM_CWD="$HOME/.openclaw/workspace"
+CHANNEL_CWD="$HOME/.openclaw/workspace"
 
 if echo "$MENTION_CONTENT" | grep -qE '\-\-step\b'; then
     test_pass
@@ -126,10 +126,10 @@ fi
 # Test 8: Workspace fallback
 # ========================================
 test_start "Workspace fallback"
-ROOM_CWD=""
+CHANNEL_CWD=""
 HOME="$HOME"
 
-fallback_path="${ROOM_CWD:-$HOME/.openclaw/workspace}"
+fallback_path="${CHANNEL_CWD:-$HOME/.openclaw/workspace}"
 if [[ "$fallback_path" == "$HOME/.openclaw/workspace" ]]; then
     test_pass
 else

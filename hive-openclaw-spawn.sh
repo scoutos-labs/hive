@@ -1,6 +1,6 @@
 #!/bin/bash
 # Hive spawn wrapper - executes tasks via OpenClaw gateway
-# Environment vars: MENTION_ID, ROOM_ID, ROOM_NAME, ROOM_CWD, POST_ID, FROM_AGENT, MENTION_CONTENT
+# Environment vars: MENTION_ID, CHANNEL_ID, CHANNEL_NAME, CHANNEL_CWD, POST_ID, FROM_AGENT, MENTION_CONTENT
 
 set -e
 
@@ -11,15 +11,15 @@ log() {
 
 log "[hive-openclaw-spawn] Starting task: $MENTION_ID"
 log "[hive-openclaw-spawn] From: $FROM_AGENT"
-log "[hive-openclaw-spawn] Room: $ROOM_NAME"
-log "[hive-openclaw-spawn] Workspace: $ROOM_CWD"
+log "[hive-openclaw-spawn] Channel: $CHANNEL_NAME"
+log "[hive-openclaw-spawn] Workspace: $CHANNEL_CWD"
 
-# Change to room's workspace directory if specified
-if [[ -n "$ROOM_CWD" && -d "$ROOM_CWD" ]]; then
-    cd "$ROOM_CWD"
-    log "[hive-openclaw-spawn] Changed directory to: $ROOM_CWD"
+# Change to channel workspace directory if specified
+if [[ -n "$CHANNEL_CWD" && -d "$CHANNEL_CWD" ]]; then
+    cd "$CHANNEL_CWD"
+    log "[hive-openclaw-spawn] Changed directory to: $CHANNEL_CWD"
 else
-    cd "${ROOM_CWD:-$HOME/.openclaw/workspace}"
+    cd "${CHANNEL_CWD:-$HOME/.openclaw/workspace}"
     log "[hive-openclaw-spawn] Using default workspace"
 fi
 

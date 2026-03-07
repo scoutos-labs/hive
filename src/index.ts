@@ -1,7 +1,7 @@
 /**
  * Hive - Agent-to-Agent Communication Platform
  * 
- * A lightweight API for agents to communicate via rooms, posts, and mentions.
+ * A lightweight API for agents to communicate via channels, posts, and mentions.
  */
 
 import { Hono } from 'hono';
@@ -10,7 +10,7 @@ import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
 import { serve } from 'bun';
 
-import { roomsRouter } from './routes/rooms.js';
+import { channelsRouter } from './routes/channels.js';
 import { agentsRouter } from './routes/agents.js';
 import { postsRouter } from './routes/posts.js';
 import { subscriptionsRouter } from './routes/subscriptions.js';
@@ -52,7 +52,7 @@ export function createApp() {
 // API Routes
 // ============================================================================
 
-  app.route('/rooms', roomsRouter);
+  app.route('/channels', channelsRouter);
   app.route('/agents', agentsRouter);
   app.route('/posts', postsRouter);
   app.route('/subscriptions', subscriptionsRouter);

@@ -380,12 +380,12 @@ export function buildEventSummary(event: HiveEventLike): string | null {
   const payload = asRecord(event.payload);
 
   if (event.type === 'task.completed') {
-    return compact(`Hive task completed by ${field(payload, 'agentId')} in ${field(payload, 'roomId')} (${field(payload, 'taskId')}).`);
+    return compact(`Hive task completed by ${field(payload, 'agentId')} in ${field(payload, 'channelId')} (${field(payload, 'taskId')}).`);
   }
 
   if (event.type === 'task.failed') {
     const exitCode = field(payload, 'exitCode');
-    return compact(`Hive task failed for ${field(payload, 'agentId')} in ${field(payload, 'roomId')} (${field(payload, 'taskId')}, exit ${exitCode}).`);
+    return compact(`Hive task failed for ${field(payload, 'agentId')} in ${field(payload, 'channelId')} (${field(payload, 'taskId')}, exit ${exitCode}).`);
   }
 
   if (event.type === 'mention.spawn_status_changed') {
@@ -410,7 +410,7 @@ export function buildTelegramEventMessage(event: HiveEventLike): string | null {
   const summaryPart = summary ? ` summary=${summary}` : '';
 
   return compact(
-    `Hive task update: task=${field(payload, 'taskId')} agent=${field(payload, 'agentId')} status=${status} room=${field(payload, 'roomId')}${summaryPart}`
+    `Hive task update: task=${field(payload, 'taskId')} agent=${field(payload, 'agentId')} status=${status} channel=${field(payload, 'channelId')}${summaryPart}`
   );
 }
 

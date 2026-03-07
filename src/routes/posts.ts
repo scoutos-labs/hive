@@ -4,7 +4,7 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { db, postKey, postsByRoomKey, roomKey, roomsListKey, generateId, addToSet, removeFromSet, getList } from '../db/index.js';
+import { db, postKey, postsByChannelKey, channelKey, channelsListKey, generateId, addToSet, removeFromSet, getList } from '../db/index.js';
 import { processMentions } from '../services/spawn.js';
 import type { Post, PostCreateInput, ApiResponse, PaginatedResponse } from '../types.js';
 
@@ -12,7 +12,7 @@ export const postsRouter = new Hono();
 
 // Validation schemas
 const createPostSchema = z.object({
-  roomId: z.string().min(1),
+  channelId: z.string().min(1),
   authorId: z.string().min(1),
   content: z.string().min(1).max(10000),
   replyTo: z.string().optional(),
@@ -37,11 +37,11 @@ postsRouter.post('/', async (c) => {
     const body = await c.req.json();
     const validated = createPostSchema.parse(body);
     
-    // Verify room exists
-    const room = db.get(roomKey(validated.roomId)) as any;
-    if (!room) {
+    // Verify channel exists
+    const channel = db.get(channelKey(validated.channelId)) as any;
+    if (!channel) {
       return c.json<ApiResponse<never>>(
-        { success: false, error: 'Room not found' },
+        { success: false, error: 'Channel not found' },
         404
       );
     }
@@ -52,7 +52,7 @@ postsRouter.post('/', async (c) => {
     
     const post: Post = {
       id: postId,
-      roomId: validated.roomId,
+      channelId: validated.channelId,
       authorId: validated.authorId,
       content: validated.content,
       createdAt: now,
@@ -62,10 +62,10 @@ postsRouter.post('/', async (c) => {
     };
     
     await db.put(postKey(postId), post);
-    await addToSet(postsByRoomKey(validated.roomId), postId);
+    await addToSet(postsByChannelKey(validated.channelId), postId);
     
     // Process mentions (create records + spawn agents)
-    const processedMentions = await processMentions(post, room);
+    const processedMentions = await processMentions(post, channel);
     
     return c.json<ApiResponse<Post>>({
       success: true,
@@ -83,12 +83,12 @@ postsRouter.post('/', async (c) => {
   }
 });
 
-// GET /posts - List posts (optionally filter by room)
+// GET /posts - List posts (optionally filter by channel)
 postsRouter.get('/', async (c) => {
-  const roomId = c.req.query('roomId');
+  const channelId = c.req.query('channelId');
   
-  if (roomId) {
-    const postIds = await getList<string>(postsByRoomKey(roomId));
+  if (channelId) {
+    const postIds = await getList<string>(postsByChannelKey(channelId));
     const posts: Post[] = [];
     
     for (const id of postIds) {
@@ -108,12 +108,12 @@ postsRouter.get('/', async (c) => {
     });
   }
   
-  const roomIds = await getList<string>(roomsListKey());
+  const channelIds = await getList<string>(channelsListKey());
   const seen = new Set<string>();
   const allPosts: Post[] = [];
 
-  for (const id of roomIds) {
-    const postIds = await getList<string>(postsByRoomKey(id));
+  for (const id of channelIds) {
+    const postIds = await getList<string>(postsByChannelKey(id));
     for (const postId of postIds) {
       if (seen.has(postId)) continue;
       const post = db.get(postKey(postId));
@@ -134,18 +134,18 @@ postsRouter.get('/', async (c) => {
   });
 });
 
-// GET /posts/errors - Get all errors across rooms
+// GET /posts/errors - Get all errors across channels
 postsRouter.get('/errors', async (c) => {
   const sinceParam = parseInt(c.req.query('since') || '0', 10);
   const limitParam = parseInt(c.req.query('limit') || '50', 10);
   const since = Number.isFinite(sinceParam) && sinceParam > 0 ? sinceParam : 0;
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 50;
 
-  const roomIds = await getList<string>(roomsListKey());
+  const channelIds = await getList<string>(channelsListKey());
   const errors: Post[] = [];
 
-  for (const roomId of roomIds) {
-    const postIds = await getList<string>(postsByRoomKey(roomId));
+  for (const channelId of channelIds) {
+    const postIds = await getList<string>(postsByChannelKey(channelId));
 
     for (const id of postIds) {
       const post = db.get(postKey(id));
@@ -188,9 +188,9 @@ postsRouter.delete('/:id', async (c) => {
     return c.json<ApiResponse<never>>({ success: false, error: 'Post not found' }, 404);
   }
   
-  // Remove primary record and its room-index entry so list queries stay consistent
+  // Remove primary record and its channel-index entry so list queries stay consistent
   await db.remove(postKey(id));
-  await removeFromSet(postsByRoomKey(post.roomId), id);
+  await removeFromSet(postsByChannelKey(post.channelId), id);
   
   return c.json<ApiResponse<never>>({ success: true });
 });

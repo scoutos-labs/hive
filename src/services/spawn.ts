@@ -15,18 +15,18 @@ import {
   subsByTargetKey,
   mentionKey, 
   mentionsByAgentKey,
-  mentionsByRoomKey,
+  mentionsByChannelKey,
   postKey,
-  postsByRoomKey,
+  postsByChannelKey,
   generateId, 
   addToSet, 
   getList 
 } from '../db/index.js';
-import type { Agent, Mention, Room, Post } from '../types.js';
+import type { Agent, Mention, Channel, Post } from '../types.js';
 import { emitHiveEvent } from './events.js';
 import { getSpawnConfig } from './spawn-config.js';
 import { checkCommandAllowed, validateSpawnArgs } from './spawn-allowlist.js';
-import { createPost } from './rooms.js';
+import { createPost } from './channels.js';
 
 // ============================================================================
 // Concurrency tracking
@@ -59,7 +59,7 @@ function decrementRunning(agentId: string): void {
 // ============================================================================
 
 async function createAgentResponsePost(
-  room: Room,
+  channel: Channel,
   authorId: string,
   output: string,
   replyToPostId?: string,
@@ -79,7 +79,7 @@ async function createAgentResponsePost(
   
   const post: Post = {
     id: postId,
-    roomId: room.id,
+    channelId: channel.id,
     authorId,
     content: output.trim(),
     mentions,
@@ -89,26 +89,26 @@ async function createAgentResponsePost(
   
   // Store post
   await db.put(postKey(postId), post);
-  await addToSet(postsByRoomKey(room.id), postId);
+  await addToSet(postsByChannelKey(channel.id), postId);
   
   console.log(`[spawn] Created agent response post ${postId} with mentions: ${mentions.join(', ')} (chain depth ${chainDepth})`);
   
   // Process mentions in this post (triggers spawn chain)
-  await processMentions(post, room, chainDepth);
+  await processMentions(post, channel, chainDepth);
   
   return post;
 }
 
 // ============================================================================
-// Check if agent is subscribed to a room
+// Check if agent is subscribed to a channel
 // ============================================================================
 
-export async function isAgentSubscribedToRoom(agentId: string, roomId: string): Promise<boolean> {
+export async function isAgentSubscribedToChannel(agentId: string, channelId: string): Promise<boolean> {
   const subIds = await getList<string>(`subs!agent!${agentId}`);
   
   for (const subId of subIds) {
     const sub = await db.get(subKey(subId));
-    if (sub && sub.targetType === 'room' && sub.targetId === roomId && sub.active) {
+    if (sub && sub.targetType === 'channel' && sub.targetId === channelId && sub.active) {
       return true;
     }
   }
@@ -118,7 +118,7 @@ export async function isAgentSubscribedToRoom(agentId: string, roomId: string): 
 
 async function createSubscription(input: {
   agentId: string;
-  targetType: 'room' | 'agent' | 'mention';
+  targetType: 'channel' | 'agent' | 'mention';
   targetId: string;
 }): Promise<void> {
   const subId = generateId('sub');
@@ -138,19 +138,19 @@ async function createSubscription(input: {
 }
 
 async function createSpawnErrorPost(params: {
-  roomId: string;
+  channelId: string;
   mentionId: string;
   agentId: string;
   spawnError?: string;
   exitCode?: number | null;
 }): Promise<void> {
-  const { roomId, mentionId, agentId, spawnError, exitCode } = params;
+  const { channelId, mentionId, agentId, spawnError, exitCode } = params;
   if (exitCode === 0 && !spawnError) return;
 
   const errorMessage = spawnError || `Process exited with code ${exitCode}`;
 
   try {
-    await createPost(roomId, {
+    await createPost(channelId, {
       authorId: 'hive',
       content: JSON.stringify({
         type: 'error',
@@ -212,8 +212,8 @@ function formatSpawnOutputForPost(stdout: string): string {
 
 export async function createMention(
   postId: string,
-  roomId: string,
-  roomName: string,
+  channelId: string,
+  channelName: string,
   mentionedAgentId: string,
   mentioningAgentId: string,
   content: string
@@ -224,8 +224,8 @@ export async function createMention(
     id: mentionId,
     agentId: mentionedAgentId,
     postId,
-    roomId,
-    roomName,
+    channelId,
+    channelName,
     mentionedAgentId,
     mentioningAgentId,
     content: content.slice(0, 1000), // Store snippet
@@ -237,14 +237,14 @@ export async function createMention(
   
   await db.put(mentionKey(mentionId), mention);
   await addToSet(mentionsByAgentKey(mentionedAgentId), mentionId);
-  await addToSet(mentionsByRoomKey(roomId), mentionId);
+  await addToSet(mentionsByChannelKey(channelId), mentionId);
 
   await emitHiveEvent(
     'mention.spawn_status_changed',
     {
       mentionId,
       agentId: mentionedAgentId,
-      roomId,
+      channelId,
       postId,
       fromStatus: null,
       toStatus: 'pending',
@@ -286,7 +286,7 @@ export async function updateMentionStatus(
       {
         mentionId: mention.id,
         agentId: mention.mentionedAgentId || mention.agentId,
-        roomId: mention.roomId,
+        channelId: mention.channelId,
         postId: mention.postId,
         fromStatus: previousStatus,
         toStatus: status,
@@ -304,7 +304,7 @@ export async function spawnAgent(
   agentId: string,
   mention: Mention,
   post: Post,
-  room: Room,
+  channel: Channel,
   chainDepth: number = 0
 ): Promise<void> {
   const cfg = getSpawnConfig();
@@ -337,9 +337,9 @@ export async function spawnAgent(
   const env = {
     ...process.env,
     MENTION_ID: mention.id,
-    ROOM_ID: room.id,
-    ROOM_NAME: room.name,
-    ROOM_CWD: room.cwd || agent.cwd || '',
+    CHANNEL_ID: channel.id,
+    CHANNEL_NAME: channel.name,
+    CHANNEL_CWD: channel.cwd || agent.cwd || '',
     POST_ID: post.id,
     FROM_AGENT: mention.mentioningAgentId || 'unknown',
     MENTION_CONTENT: post.content,
@@ -355,7 +355,7 @@ export async function spawnAgent(
         taskId: mention.id,
         mentionId: mention.id,
         agentId,
-        roomId: room.id,
+        channelId: channel.id,
         postId: post.id,
         error: 'Agent spawnCommand is empty',
       },
@@ -373,7 +373,7 @@ export async function spawnAgent(
     await updateMentionStatus(mention.id, 'failed', undefined, msg);
     await emitHiveEvent(
       'task.failed',
-      { taskId: mention.id, mentionId: mention.id, agentId, roomId: room.id, postId: post.id, error: msg },
+      { taskId: mention.id, mentionId: mention.id, agentId, channelId: channel.id, postId: post.id, error: msg },
       'spawn:spawnAgent'
     );
     return;
@@ -388,14 +388,14 @@ export async function spawnAgent(
     await updateMentionStatus(mention.id, 'failed', undefined, argsError);
     await emitHiveEvent(
       'task.failed',
-      { taskId: mention.id, mentionId: mention.id, agentId, roomId: room.id, postId: post.id, error: argsError },
+      { taskId: mention.id, mentionId: mention.id, agentId, channelId: channel.id, postId: post.id, error: argsError },
       'spawn:spawnAgent'
     );
     return;
   }
 
-  // Resolve working directory: room.cwd takes precedence over agent.cwd
-  const spawnCwd = room.cwd || agent.cwd;
+  // Resolve working directory: channel.cwd takes precedence over agent.cwd
+  const spawnCwd = channel.cwd || agent.cwd;
   
   // Resolve $WORKSPACE placeholder in args with the cwd
   const resolvedArgs = args.map(arg => {
@@ -413,7 +413,7 @@ export async function spawnAgent(
       taskId: mention.id,
       mentionId: mention.id,
       agentId,
-      roomId: room.id,
+      channelId: channel.id,
       postId: post.id,
       chainDepth,
     },
@@ -443,7 +443,7 @@ export async function spawnAgent(
       updateMentionStatus(mention.id, 'failed', undefined, msg).catch(() => {});
       emitHiveEvent(
         'task.failed',
-        { taskId: mention.id, mentionId: mention.id, agentId, roomId: room.id, postId: post.id, error: msg },
+        { taskId: mention.id, mentionId: mention.id, agentId, channelId: channel.id, postId: post.id, error: msg },
         'spawn:timeout'
       ).catch(() => {});
     }, cfg.timeoutMs);
@@ -472,7 +472,7 @@ export async function spawnAgent(
           taskId: mention.id,
           mentionId: mention.id,
           agentId,
-          roomId: room.id,
+          channelId: channel.id,
           postId: post.id,
           stream: 'stdout',
           chunk: chunk.slice(0, 1000),
@@ -499,7 +499,7 @@ export async function spawnAgent(
           taskId: mention.id,
           mentionId: mention.id,
           agentId,
-          roomId: room.id,
+          channelId: channel.id,
           postId: post.id,
           stream: 'stderr',
           chunk: chunk.slice(0, 1000),
@@ -529,7 +529,7 @@ export async function spawnAgent(
 
         if (postContent) {
           console.log(`[spawn] Creating response post from agent output (chain depth ${chainDepth + 1})`);
-          const responsePost = await createAgentResponsePost(room, agentId, postContent, post.id, chainDepth + 1);
+          const responsePost = await createAgentResponsePost(channel, agentId, postContent, post.id, chainDepth + 1);
           responsePostId = responsePost.id;
         }
 
@@ -539,7 +539,7 @@ export async function spawnAgent(
             taskId: mention.id,
             mentionId: mention.id,
             agentId,
-            roomId: room.id,
+            channelId: channel.id,
             postId: post.id,
             exitCode: code,
             outputLength: stdoutBuf.length,
@@ -552,7 +552,7 @@ export async function spawnAgent(
         console.error(`[spawn] Agent ${agentId} failed with code ${code}`);
         await updateMentionStatus(mention.id, 'failed', output, error);
         await createSpawnErrorPost({
-          roomId: post.roomId,
+          channelId: post.channelId,
           mentionId: mention.id,
           agentId: agent.id,
           spawnError: error,
@@ -564,7 +564,7 @@ export async function spawnAgent(
             taskId: mention.id,
             mentionId: mention.id,
             agentId,
-            roomId: room.id,
+            channelId: channel.id,
             postId: post.id,
             exitCode: code,
             error,
@@ -586,7 +586,7 @@ export async function spawnAgent(
       console.error(`[spawn] Failed to spawn agent ${agentId}:`, err.message);
       await updateMentionStatus(mention.id, 'failed', undefined, err.message);
       await createSpawnErrorPost({
-        roomId: post.roomId,
+        channelId: post.channelId,
         mentionId: mention.id,
         agentId: agent.id,
         spawnError: err.message,
@@ -598,7 +598,7 @@ export async function spawnAgent(
           taskId: mention.id,
           mentionId: mention.id,
           agentId,
-          roomId: room.id,
+          channelId: channel.id,
           postId: post.id,
           error: err.message,
         },
@@ -625,7 +625,7 @@ export async function spawnAgent(
         taskId: mention.id,
         mentionId: mention.id,
         agentId,
-        roomId: room.id,
+        channelId: channel.id,
         postId: post.id,
         error: String(err),
       },
@@ -638,7 +638,7 @@ export async function spawnAgent(
 // Process mentions in a post
 // ============================================================================
 
-export async function processMentions(post: Post, room: Room, chainDepth: number = 0): Promise<Mention[]> {
+export async function processMentions(post: Post, channel: Channel, chainDepth: number = 0): Promise<Mention[]> {
   const mentions: Mention[] = [];
   const cfg = getSpawnConfig();
   
@@ -658,17 +658,17 @@ export async function processMentions(post: Post, room: Room, chainDepth: number
       continue;
     }
     
-    // Check if agent is subscribed to the room
-    let isSubscribed = await isAgentSubscribedToRoom(mentionedAgentId, post.roomId);
+    // Check if agent is subscribed to the channel
+    let isSubscribed = await isAgentSubscribedToChannel(mentionedAgentId, post.channelId);
     if (!isSubscribed) {
       // AUTO-SUBSCRIBE: Create subscription for first-time mentions
       try {
         await createSubscription({
           agentId: agent.id,
-          targetType: 'room',
-          targetId: post.roomId,
+          targetType: 'channel',
+          targetId: post.channelId,
         });
-        console.log(`[posts] Auto-subscribed agent ${agent.id} to room ${post.roomId}`);
+        console.log(`[posts] Auto-subscribed agent ${agent.id} to channel ${post.channelId}`);
         isSubscribed = true;
       } catch (err) {
         console.error(`[posts] Failed to auto-subscribe ${agent.id}:`, err);
@@ -679,8 +679,8 @@ export async function processMentions(post: Post, room: Room, chainDepth: number
     // Create mention record
     const mention = await createMention(
       post.id,
-      post.roomId,
-      room.name,
+      post.channelId,
+      channel.name,
       mentionedAgentId,
       post.authorId,
       post.content
@@ -703,7 +703,7 @@ export async function processMentions(post: Post, room: Room, chainDepth: number
         continue;
       }
       // Spawn asynchronously - don't await
-      spawnAgent(mentionedAgentId, mention, post, room, chainDepth).catch(err => {
+      spawnAgent(mentionedAgentId, mention, post, channel, chainDepth).catch(err => {
         console.error(`[mentions] Spawn error for ${mentionedAgentId}:`, err);
       });
     }

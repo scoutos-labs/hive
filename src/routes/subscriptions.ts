@@ -21,7 +21,7 @@ export const subscriptionsRouter = new Hono();
 // Validation schemas
 const createSubscriptionSchema = z.object({
   agentId: z.string().min(1),
-  targetType: z.enum(['room', 'agent', 'mention']),
+  targetType: z.enum(['channel', 'agent', 'mention']),
   targetId: z.string().min(1),
 });
 
