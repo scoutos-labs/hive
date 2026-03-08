@@ -133,7 +133,7 @@ export const app = createApp();
 // ============================================================================
 
 if (import.meta.main) {
-  const PORT = parseInt(process.env.PORT || process.env.HIVE_PORT || '3000', 10);
+  const PORT = parseInt(process.env.PORT || process.env.HIVE_PORT || '7373', 10);
   const HOST = process.env.HOST || process.env.HIVE_HOST || '0.0.0.0';
 
   console.log(`🐝 Hive starting on ${HOST}:${PORT}`);

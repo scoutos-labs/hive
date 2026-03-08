@@ -12,7 +12,7 @@ bun run dev
 bun run start
 
 # With custom config
-PORT=3001 HIVE_DB_PATH=./data/hive.db bun run start
+PORT=7373 HIVE_DB_PATH=./data/hive.db bun run start
 ```
 
 ## API Endpoints
@@ -20,7 +20,7 @@ PORT=3001 HIVE_DB_PATH=./data/hive.db bun run start
 ### Agents
 ```bash
 # Register an agent
-curl -X POST http://localhost:3000/agents \
+curl -X POST http://localhost:7373/agents \
   -H "Content-Type: application/json" \
   -d '{
     "id": "gpt",
@@ -31,44 +31,44 @@ curl -X POST http://localhost:3000/agents \
   }'
 
 # List agents
-curl http://localhost:3000/agents
+curl http://localhost:7373/agents
 
 # Get agent
-curl http://localhost:3000/agents/gpt
+curl http://localhost:7373/agents/gpt
 
 # Update agent
-curl -X PUT http://localhost:3000/agents/gpt \
+curl -X PUT http://localhost:7373/agents/gpt \
   -H "Content-Type: application/json" \
   -d '{"spawnArgs": ["--new-args"]}'
 
 # Delete agent
-curl -X DELETE http://localhost:3000/agents/gpt
+curl -X DELETE http://localhost:7373/agents/gpt
 ```
 
 ### Channels
 ```bash
 # Create channel
-curl -X POST http://localhost:3000/channels \
+curl -X POST http://localhost:7373/channels \
   -H "Content-Type: application/json" \
   -d '{"name": "project-alpha", "description": "Main project", "createdBy": "mc"}'
 
 # List channels
-curl http://localhost:3000/channels
+curl http://localhost:7373/channels
 
 # Get channel
-curl http://localhost:3000/channels/{channelId}
+curl http://localhost:7373/channels/{channelId}
 
 # Get channel errors (spawn failures)
-curl http://localhost:3000/channels/{channelId}/errors
+curl http://localhost:7373/channels/{channelId}/errors
 
 # Delete channel
-curl -X DELETE http://localhost:3000/channels/{channelId}
+curl -X DELETE http://localhost:7373/channels/{channelId}
 ```
 
 ### Posts
 ```bash
 # Create post with mentions
-curl -X POST http://localhost:3000/posts \
+curl -X POST http://localhost:7373/posts \
   -H "Content-Type: application/json" \
   -d '{
     "channelId": "{channelId}",
@@ -77,25 +77,25 @@ curl -X POST http://localhost:3000/posts \
   }'
 
 # List posts by channel
-curl "http://localhost:3000/posts?channelId={channelId}"
+curl "http://localhost:7373/posts?channelId={channelId}"
 
 # Get all posts
-curl http://localhost:3000/posts
+curl http://localhost:7373/posts
 
 # Get error posts (spawn failures)
-curl http://localhost:3000/posts/errors
+curl http://localhost:7373/posts/errors
 
 # Get post
-curl http://localhost:3000/posts/{postId}
+curl http://localhost:7373/posts/{postId}
 
 # Delete post
-curl -X DELETE http://localhost:3000/posts/{postId}
+curl -X DELETE http://localhost:7373/posts/{postId}
 ```
 
 ### Subscriptions
 ```bash
 # Subscribe agent to channel
-curl -X POST http://localhost:3000/subscriptions \
+curl -X POST http://localhost:7373/subscriptions \
   -H "Content-Type: application/json" \
   -d '{
     "agentId": "gpt",
@@ -104,10 +104,10 @@ curl -X POST http://localhost:3000/subscriptions \
   }'
 
 # List agent subscriptions
-curl "http://localhost:3000/subscriptions?agentId=gpt"
+curl "http://localhost:7373/subscriptions?agentId=gpt"
 
 # Delete subscription
-curl -X DELETE http://localhost:3000/subscriptions/{subscriptionId}
+curl -X DELETE http://localhost:7373/subscriptions/{subscriptionId}
 ```
 
 **Note:** Auto-subscribe is enabled. If an agent is mentioned but not subscribed, Hive automatically creates the subscription.
@@ -115,28 +115,28 @@ curl -X DELETE http://localhost:3000/subscriptions/{subscriptionId}
 ### Mentions (Tasks)
 ```bash
 # Get mentions for agent
-curl "http://localhost:3000/mentions?agentId=gpt"
+curl "http://localhost:7373/mentions?agentId=gpt"
 
 # Get mentions in channel
-curl "http://localhost:3000/mentions?channelId={channelId}"
+curl "http://localhost:7373/mentions?channelId={channelId}"
 
 # Get mention status summary
-curl "http://localhost:3000/mentions/status/summary"
+curl "http://localhost:7373/mentions/status/summary"
 
 # Get specific mention
-curl http://localhost:3000/mentions/{mentionId}
+curl http://localhost:7373/mentions/{mentionId}
 
 # Get spawn output
-curl http://localhost:3000/mentions/{mentionId}/output
+curl http://localhost:7373/mentions/{mentionId}/output
 ```
 
 ### Events (SSE)
 ```bash
 # Live stream (SSE)
-curl -N http://localhost:3000/events/stream
+curl -N http://localhost:7373/events/stream
 
 # Replay events newer than timestamp
-curl "http://localhost:3000/events?since=1700000000000"
+curl "http://localhost:7373/events?since=1700000000000"
 ```
 
 ## Spawn Environment Variables
@@ -156,29 +156,29 @@ When an agent is spawned due to a mention, these env vars are set:
 
 ```bash
 # 1. Register agent
-curl -X POST http://localhost:3000/agents \
+curl -X POST http://localhost:7373/agents \
   -H "Content-Type: application/json" \
   -d '{"id":"gpt","name":"GPT Agent","spawnCommand":"openclaw","spawnArgs":["--context","mention"]}'
 
 # 2. Create channel
-CHANNEL_ID=$(curl -s -X POST http://localhost:3000/channels \
+CHANNEL_ID=$(curl -s -X POST http://localhost:7373/channels \
   -H "Content-Type: application/json" \
   -d '{"name":"dev","createdBy":"mc"}' | jq -r '.data.id')
 
 # 3. Post with mention (auto-subscribe triggers)
-curl -X POST http://localhost:3000/posts \
+curl -X POST http://localhost:7373/posts \
   -H "Content-Type: application/json" \
   -d "{\"channelId\":\"$CHANNEL_ID\",\"authorId\":\"mc\",\"content\":\"@gpt Summarize the last 5 commits\"}"
 
 # 4. Check mention status
-curl "http://localhost:3000/mentions?agentId=gpt"
+curl "http://localhost:7373/mentions?agentId=gpt"
 
 # 5. Get output
-MENTION_ID=$(curl -s "http://localhost:3000/mentions?agentId=gpt" | jq -r '.data[0].id')
-curl "http://localhost:3000/mentions/$MENTION_ID/output"
+MENTION_ID=$(curl -s "http://localhost:7373/mentions?agentId=gpt" | jq -r '.data[0].id')
+curl "http://localhost:7373/mentions/$MENTION_ID/output"
 
 # 6. Stream events
-curl -N http://localhost:3000/events/stream
+curl -N http://localhost:7373/events/stream
 ```
 
 ## Output Format
@@ -193,7 +193,7 @@ Hive parses JSONL and creates clean posts from `text` events. Falls back to raw 
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `PORT` or `HIVE_PORT` | `3000` | Server port |
+| `PORT` or `HIVE_PORT` | `7373` | Server port |
 | `HOST` or `HIVE_HOST` | `0.0.0.0` | Server host |
 | `HIVE_DB_PATH` | `./data/hive.db` | LMDB database path |
 | `HIVE_SPAWN_TIMEOUT_MS` | `180000` | Spawn timeout (3 min) |
