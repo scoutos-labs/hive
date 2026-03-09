@@ -1,0 +1,162 @@
+/**
+ * Hive - Mention Service
+ * Handles mention creation and notification logic
+ */
+
+import { spawn } from 'child_process';
+import { 
+  db, 
+  mentionKey, 
+  mentionsByAgentKey, 
+  generateId, 
+  addToSet, 
+  getList 
+} from '../db/index.js';
+import * as roomsService from './rooms.js';
+import * as agentsService from './agents.js';
+import type { Mention, Agent } from '../types.js';
+
+// ============================================================================
+// Mention Processing
+// ============================================================================
+
+/**
+ * Process mentions in a post - spawn agents for subscribed mentions
+ */
+export async function processMentions(
+  postId: string,
+  roomId: string,
+  roomName: string,
+  authorId: string,
+  content: string,
+  mentions: string[]
+): Promise<Mention[]> {
+  const createdMentions: Mention[] = [];
+
+  for (const agentId of mentions) {
+    // Check if agent exists
+    const agent = await agentsService.getAgent(agentId);
+    if (!agent) {
+      console.log(`[mentions] Agent ${agentId} not found, skipping`);
+      continue;
+    }
+
+    // Check if agent is subscribed to the room
+    const subscribed = await roomsService.isSubscribed(roomId, agentId);
+    if (!subscribed) {
+      console.log(`[mentions] Agent ${agentId} not subscribed to room ${roomId}, skipping`);
+      continue;
+    }
+
+    // Create mention record
+    const mentionId = generateId('mention');
+    const mention: Mention = {
+      id: mentionId,
+      agentId,
+      postId,
+      roomId,
+      roomName,
+      fromAgentId: authorId,
+      content: content.slice(0, 500), // Truncate for storage
+      createdAt: Date.now(),
+      acknowledged: false,
+    };
+
+    // Store mention
+    await db.put(mentionKey(mentionId), mention);
+    await addToSet(mentionsByAgentKey(agentId), mentionId);
+
+    createdMentions.push(mention);
+
+    // Spawn agent
+    await spawnAgentForMention(agent, mention);
+  }
+
+  return createdMentions;
+}
+
+/**
+ * Spawn an agent when mentioned
+ */
+async function spawnAgentForMention(agent: Agent, mention: Mention): Promise<void> {
+  console.log(`[mentions] Spawning agent ${agent.id} for mention ${mention.id}`);
+
+  const env = {
+    ...process.env,
+    MENTION_ID: mention.id,
+    ROOM_ID: mention.roomId,
+    ROOM_NAME: mention.roomName || '',
+    POST_ID: mention.postId,
+    FROM_AGENT: mention.fromAgentId || '',
+    MENTION_CONTENT: mention.content || '',
+  };
+
+  const args = agent.spawnArgs || [];
+
+  try {
+    const child = spawn(agent.spawnCommand, args, {
+      cwd: agent.cwd,
+      env,
+      detached: true,
+      stdio: 'ignore',
+    });
+
+    child.unref(); // Don't wait for child to complete
+
+    child.on('error', (err) => {
+      console.error(`[mentions] Failed to spawn agent ${agent.id}:`, err.message);
+    });
+
+    console.log(`[mentions] Spawned agent ${agent.id} (PID: ${child.pid})`);
+  } catch (err) {
+    console.error(`[mentions] Spawn error for ${agent.id}:`, err);
+  }
+}
+
+// ============================================================================
+// Mention Queries
+// ============================================================================
+
+/**
+ * Get mentions for an agent
+ */
+export async function getAgentMentions(
+  agentId: string,
+  unacknowledgedOnly = false,
+  limit = 50
+): Promise<Mention[]> {
+  const mentionIds = await getList<string>(mentionsByAgentKey(agentId));
+  const mentions: Mention[] = [];
+
+  for (const id of mentionIds) {
+    const mention = await db.get(mentionKey(id));
+    if (mention) {
+      if (unacknowledgedOnly && mention.acknowledged) continue;
+      mentions.push(mention);
+      if (mentions.length >= limit) break;
+    }
+  }
+
+  return mentions.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/**
+ * Acknowledge a mention
+ */
+export async function acknowledgeMention(mentionId: string): Promise<Mention | null> {
+  const mention = await db.get(mentionKey(mentionId));
+  if (!mention) return null;
+
+  mention.acknowledged = true;
+  await db.put(mentionKey(mentionId), mention);
+
+  return mention;
+}
+
+/**
+ * Get a specific mention
+ */
+export async function getMention(id: string): Promise<Mention | null> {
+  const mention = await db.get(mentionKey(id));
+  return mention || null;
+}

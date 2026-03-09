@@ -1,0 +1,33 @@
+node_modules/
+data/
+*.db
+*.lmdb
+hive-server
+dist/
+.DS_Store
+
+# Log files
+*.log
+.logs/
+
+# Temp files
+.tmp/
+*.tmp
+
+# OpenClaw workspace files
+.openclaw/
+
+# Agent workspace files (user-specific)
+AGENTS.md
+SOUL.md
+USER.md
+HEARTBEAT.md
+IDENTITY.md
+TOOLS.md
+
+# Runtime logs
+webhook-events.log
+
+# Task files
+task-*.json
+review-task-*.md
