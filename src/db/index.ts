@@ -27,13 +27,13 @@ let closePromise: Promise<void> | null = null;
 /**
  * LMDB Key Patterns:
  * 
- * Rooms:
- *   room!{roomId}              -> Room object
- *   rooms!list                 -> string[] of all room ids
+ * Channels:
+ *   channel!{channelId}              -> Channel object
+ *   channels!list                 -> string[] of all channel ids
  * 
  * Posts:
  *   post!{postId}              -> Post object
- *   posts!room!{roomId}        -> string[] of post ids in room (sorted by time)
+ *   posts!channel!{channelId}        -> string[] of post ids in channel (sorted by time)
  *   posts!agent!{agentId}      -> string[] of post ids by agent
  * 
  * Agents:
@@ -48,19 +48,19 @@ let closePromise: Promise<void> | null = null;
  * Mentions:
  *   mention!{mentionId}        -> Mention object
  *   mentions!agent!{agentId}   -> string[] of mention ids for agent
- *   mentions!room!{roomId}     -> string[] of mention ids in room
+ *   mentions!channel!{channelId}     -> string[] of mention ids in channel
  */
 
 // Delimiter invariant: `!` splits namespaces to keep related keys grouped when
 // scanning, and id segments should never contain `!`.
 
-// Room keys
-export const roomKey = (id: string) => `room!${id}`;
-export const roomsListKey = () => 'rooms!list';
+// Channel keys
+export const channelKey = (id: string) => `channel!${id}`;
+export const channelsListKey = () => 'channels!list';
 
 // Post keys
 export const postKey = (id: string) => `post!${id}`;
-export const postsByRoomKey = (roomId: string) => `posts!room!${roomId}`;
+export const postsByChannelKey = (channelId: string) => `posts!channel!${channelId}`;
 export const postsByAgentKey = (agentId: string) => `posts!agent!${agentId}`;
 
 // Agent keys
@@ -75,7 +75,7 @@ export const subsByTargetKey = (type: string, id: string) => `subs!target!${type
 // Mention keys
 export const mentionKey = (id: string) => `mention!${id}`;
 export const mentionsByAgentKey = (agentId: string) => `mentions!agent!${agentId}`;
-export const mentionsByRoomKey = (roomId: string) => `mentions!room!${roomId}`;
+export const mentionsByChannelKey = (channelId: string) => `mentions!channel!${channelId}`;
 
 // Event keys
 export const eventKey = (id: string) => `event!${id}`;

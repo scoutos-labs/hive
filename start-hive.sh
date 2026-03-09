@@ -15,7 +15,7 @@ cd "$HIVE_DIR" && ./hive-server > "$HIVE_LOG" 2>&1 &
 sleep 2
 
 # Verify it started
-if curl -s http://127.0.0.1:3000/health > /dev/null 2>&1; then
+if curl -s http://127.0.0.1:7373/health > /dev/null 2>&1; then
     echo "Hive started successfully"
     exit 0
 else

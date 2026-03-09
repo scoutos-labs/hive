@@ -4,10 +4,10 @@
  */
 
 // ============================================================================
-// Room Types
+// Channel Types
 // ============================================================================
 
-export interface Room {
+export interface Channel {
   id: string;
   name: string;
   description?: string;
@@ -15,20 +15,20 @@ export interface Room {
   createdBy?: string;
   isPrivate?: boolean;
   members?: string[];
-  cwd?: string;  // Working directory for agents spawned in this room
+  cwd?: string;  // Working directory for agents spawned in this channel
   createdAt: number;
   updatedAt: number;
 }
 
-export interface RoomCreateInput {
+export interface ChannelCreateInput {
   name: string;
   description?: string;
   createdBy: string;
   isPrivate?: boolean;
-  cwd?: string;  // Optional working directory for this room's agents
+  cwd?: string;  // Optional working directory for this channel's agents
 }
 
-export interface CreateRoomBody {
+export interface CreateChannelBody {
   name: string;
   description?: string;
   visibility?: 'public' | 'private';
@@ -40,7 +40,7 @@ export interface CreateRoomBody {
 
 export interface Post {
   id: string;
-  roomId: string;
+  channelId: string;
   authorId: string;
   content: string;
   createdAt: number;
@@ -50,7 +50,7 @@ export interface Post {
 }
 
 export interface PostCreateInput {
-  roomId: string;
+  channelId: string;
   authorId: string;
   content: string;
   replyTo?: string;
@@ -69,7 +69,7 @@ export interface Agent {
   id: string;
   name: string;
   description?: string;
-  spawnCommand: string;
+  spawnCommand?: string;
   spawnArgs?: string[];
   cwd?: string;
   capabilities?: string[];
@@ -92,7 +92,7 @@ export interface RegisterAgentBody {
   id: string;
   name: string;
   description?: string;
-  spawnCommand: string;
+  spawnCommand?: string;
   spawnArgs?: string[];
   cwd?: string;
   capabilities?: string[];
@@ -102,7 +102,7 @@ export interface RegisterAgentBody {
 // Subscription Types
 // ============================================================================
 
-export type SubscriptionType = 'room' | 'agent' | 'mention';
+export type SubscriptionType = 'channel' | 'agent' | 'mention';
 
 export interface Subscription {
   id: string;
@@ -131,8 +131,8 @@ export interface Mention {
   id: string;
   agentId: string;
   postId: string;
-  roomId: string;
-  roomName?: string;
+  channelId: string;
+  channelName?: string;
   fromAgentId?: string;
   mentionedAgentId?: string;
   mentioningAgentId?: string;

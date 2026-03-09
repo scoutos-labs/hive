@@ -1,13 +1,13 @@
 /**
- * Hive - Room Service
+ * Hive - Channel Service
  */
 
 import { 
   db, 
-  roomKey, 
-  roomsListKey, 
+  channelKey, 
+  channelsListKey, 
   postKey, 
-  postsByRoomKey, 
+  postsByChannelKey, 
   subKey, 
   subsByAgentKey, 
   subsByTargetKey, 
@@ -16,15 +16,15 @@ import {
   removeFromSet, 
   getList 
 } from '../db/index.js';
-import type { Room, Post, CreateRoomBody, CreatePostBody, Subscription } from '../types.js';
+import type { Channel, Post, CreateChannelBody, CreatePostBody, Subscription } from '../types.js';
 
 // ============================================================================
-// Room Operations
+// Channel Operations
 // ============================================================================
 
-export async function createRoom(data: CreateRoomBody): Promise<Room> {
-  const id = generateId('room');
-  const room: Room = {
+export async function createChannel(data: CreateChannelBody): Promise<Channel> {
+  const id = generateId('channel');
+  const channel: Channel = {
     id,
     name: data.name,
     description: data.description,
@@ -33,52 +33,52 @@ export async function createRoom(data: CreateRoomBody): Promise<Room> {
     updatedAt: Date.now(),
   };
 
-  await db.put(roomKey(id), room);
-  await addToSet(roomsListKey(), id);
+  await db.put(channelKey(id), channel);
+  await addToSet(channelsListKey(), id);
 
-  return room;
+  return channel;
 }
 
-export async function getRoom(id: string): Promise<Room | null> {
-  const room = await db.get(roomKey(id));
-  return room || null;
+export async function getChannel(id: string): Promise<Channel | null> {
+  const channel = await db.get(channelKey(id));
+  return channel || null;
 }
 
-export async function listRooms(): Promise<Room[]> {
-  const roomIds = await getList<string>(roomsListKey());
-  const rooms: Room[] = [];
+export async function listChannels(): Promise<Channel[]> {
+  const channelIds = await getList<string>(channelsListKey());
+  const channels: Channel[] = [];
 
-  for (const id of roomIds) {
-    const room = await db.get(roomKey(id));
-    if (room && room.visibility === 'public') {
-      rooms.push(room);
+  for (const id of channelIds) {
+    const channel = await db.get(channelKey(id));
+    if (channel && channel.visibility === 'public') {
+      channels.push(channel);
     }
   }
 
-  return rooms.sort((a, b) => b.createdAt - a.createdAt);
+  return channels.sort((a, b) => b.createdAt - a.createdAt);
 }
 
-export async function updateRoom(id: string, data: Partial<Room>): Promise<Room | null> {
-  const room = await getRoom(id);
-  if (!room) return null;
+export async function updateChannel(id: string, data: Partial<Channel>): Promise<Channel | null> {
+  const channel = await getChannel(id);
+  if (!channel) return null;
 
-  const updated: Room = {
-    ...room,
+  const updated: Channel = {
+    ...channel,
     ...data,
     id,
     updatedAt: Date.now(),
   };
 
-  await db.put(roomKey(id), updated);
+  await db.put(channelKey(id), updated);
   return updated;
 }
 
-export async function deleteRoom(id: string): Promise<boolean> {
-  const room = await getRoom(id);
-  if (!room) return false;
+export async function deleteChannel(id: string): Promise<boolean> {
+  const channel = await getChannel(id);
+  if (!channel) return false;
 
-  await db.remove(roomKey(id));
-  await removeFromSet(roomsListKey(), id);
+  await db.remove(channelKey(id));
+  await removeFromSet(channelsListKey(), id);
 
   return true;
 }
@@ -87,7 +87,7 @@ export async function deleteRoom(id: string): Promise<boolean> {
 // Post Operations
 // ============================================================================
 
-export async function createPost(roomId: string, data: CreatePostBody): Promise<Post> {
+export async function createPost(channelId: string, data: CreatePostBody): Promise<Post> {
   const id = generateId('post');
 
   // Extract mentions from content (@agentId)
@@ -100,7 +100,7 @@ export async function createPost(roomId: string, data: CreatePostBody): Promise<
 
   const post: Post = {
     id,
-    roomId,
+    channelId,
     authorId: data.authorId,
     content: data.content,
     mentions,
@@ -108,7 +108,7 @@ export async function createPost(roomId: string, data: CreatePostBody): Promise<
   };
 
   await db.put(postKey(id), post);
-  await addToSet(postsByRoomKey(roomId), id);
+  await addToSet(postsByChannelKey(channelId), id);
 
   return post;
 }
@@ -118,8 +118,8 @@ export async function getPost(id: string): Promise<Post | null> {
   return post || null;
 }
 
-export async function listPosts(roomId: string, before?: number, limit = 50): Promise<Post[]> {
-  const postIds = await getList<string>(postsByRoomKey(roomId));
+export async function listPosts(channelId: string, before?: number, limit = 50): Promise<Post[]> {
+  const postIds = await getList<string>(postsByChannelKey(channelId));
   const posts: Post[] = [];
 
   for (const id of postIds) {
@@ -138,32 +138,32 @@ export async function listPosts(roomId: string, before?: number, limit = 50): Pr
 // Subscription Operations
 // ============================================================================
 
-export async function subscribeToRoom(roomId: string, agentId: string): Promise<void> {
-  const subId = `${agentId}:${roomId}`;
+export async function subscribeToChannel(channelId: string, agentId: string): Promise<void> {
+  const subId = `${agentId}:${channelId}`;
   
   const subscription: Subscription = {
     id: subId,
     agentId,
-    targetType: 'room',
-    targetId: roomId,
+    targetType: 'channel',
+    targetId: channelId,
     createdAt: Date.now(),
   };
 
   await db.put(subKey(subId), subscription);
   await addToSet(subsByAgentKey(agentId), subId);
-  await addToSet(subsByTargetKey('room', roomId), subId);
+  await addToSet(subsByTargetKey('channel', channelId), subId);
 }
 
-export async function unsubscribeFromRoom(roomId: string, agentId: string): Promise<void> {
-  const subId = `${agentId}:${roomId}`;
+export async function unsubscribeFromChannel(channelId: string, agentId: string): Promise<void> {
+  const subId = `${agentId}:${channelId}`;
 
   await db.remove(subKey(subId));
   await removeFromSet(subsByAgentKey(agentId), subId);
-  await removeFromSet(subsByTargetKey('room', roomId), subId);
+  await removeFromSet(subsByTargetKey('channel', channelId), subId);
 }
 
-export async function getRoomSubscribers(roomId: string): Promise<string[]> {
-  const subIds = await getList<string>(subsByTargetKey('room', roomId));
+export async function getChannelSubscribers(channelId: string): Promise<string[]> {
+  const subIds = await getList<string>(subsByTargetKey('channel', channelId));
   const agentIds = new Set<string>();
 
   for (const subId of subIds) {
@@ -178,20 +178,20 @@ export async function getRoomSubscribers(roomId: string): Promise<string[]> {
 
 export async function getAgentSubscriptions(agentId: string): Promise<string[]> {
   const subIds = await getList<string>(subsByAgentKey(agentId));
-  const roomIds: string[] = [];
+  const channelIds: string[] = [];
 
   for (const subId of subIds) {
     const sub = await db.get(subKey(subId));
-    if (sub && sub.targetType === 'room') {
-      roomIds.push(sub.targetId);
+    if (sub && sub.targetType === 'channel') {
+      channelIds.push(sub.targetId);
     }
   }
 
-  return roomIds;
+  return channelIds;
 }
 
-export async function isSubscribed(roomId: string, agentId: string): Promise<boolean> {
-  const subId = `${agentId}:${roomId}`;
+export async function isSubscribed(channelId: string, agentId: string): Promise<boolean> {
+  const subId = `${agentId}:${channelId}`;
   const sub = await db.get(subKey(subId));
   return !!sub;
 }

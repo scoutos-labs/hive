@@ -23,15 +23,15 @@ async function requestJson(path: string, init?: RequestInit) {
   return { response, body };
 }
 
-async function createRoom(overrides: Record<string, unknown> = {}) {
+async function createChannel(overrides: Record<string, unknown> = {}) {
   const payload = {
-    name: `Room-${randomUUID()}`,
-    description: 'Integration test room',
+    name: `Channel-${randomUUID()}`,
+    description: 'Integration test channel',
     createdBy: `creator-${randomUUID()}`,
     ...overrides,
   };
 
-  const { response, body } = await requestJson('/rooms', {
+  const { response, body } = await requestJson('/channels', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
@@ -59,11 +59,11 @@ async function createAgent(overrides: Record<string, unknown> = {}) {
   return { payload, registered: body };
 }
 
-async function subscribeAgentToRoom(agentId: string, roomId: string) {
+async function subscribeAgentToChannel(agentId: string, channelId: string) {
   const { response, body } = await requestJson('/subscriptions', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ agentId, targetType: 'room', targetId: roomId }),
+    body: JSON.stringify({ agentId, targetType: 'channel', targetId: channelId }),
   });
 
   expect(response.status).toBe(201);
@@ -105,26 +105,26 @@ describe('core routes', () => {
   });
 });
 
-describe('rooms endpoints', () => {
-  it('supports create/list/get/delete room', async () => {
-    const room = await createRoom({ name: 'Room Happy Path' });
+describe('channels endpoints', () => {
+  it('supports create/list/get/delete channel', async () => {
+    const channel = await createChannel({ name: 'Channel Happy Path' });
 
-    const list = await requestJson('/rooms');
+    const list = await requestJson('/channels');
     expect(list.response.status).toBe(200);
     expect(list.body.success).toBe(true);
-    expect(list.body.data.some((item: any) => item.id === room.id)).toBe(true);
+    expect(list.body.data.some((item: any) => item.id === channel.id)).toBe(true);
 
-    const getOne = await requestJson(`/rooms/${room.id}`);
+    const getOne = await requestJson(`/channels/${channel.id}`);
     expect(getOne.response.status).toBe(200);
-    expect(getOne.body.data.id).toBe(room.id);
+    expect(getOne.body.data.id).toBe(channel.id);
 
-    const del = await requestJson(`/rooms/${room.id}`, { method: 'DELETE' });
+    const del = await requestJson(`/channels/${channel.id}`, { method: 'DELETE' });
     expect(del.response.status).toBe(200);
     expect(del.body.success).toBe(true);
   });
 
   it('returns validation error for invalid create payload', async () => {
-    const { response, body } = await requestJson('/rooms', {
+    const { response, body } = await requestJson('/channels', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: '', createdBy: '' }),
@@ -134,13 +134,13 @@ describe('rooms endpoints', () => {
     expect(body.success).toBe(false);
   });
 
-  it('returns not found for missing room', async () => {
-    const missingId = `room-missing-${randomUUID()}`;
+  it('returns not found for missing channel', async () => {
+    const missingId = `channel-missing-${randomUUID()}`;
 
-    const getOne = await requestJson(`/rooms/${missingId}`);
+    const getOne = await requestJson(`/channels/${missingId}`);
     expect(getOne.response.status).toBe(404);
 
-    const del = await requestJson(`/rooms/${missingId}`, { method: 'DELETE' });
+    const del = await requestJson(`/channels/${missingId}`, { method: 'DELETE' });
     expect(del.response.status).toBe(404);
   });
 });
@@ -185,13 +185,13 @@ describe('agents endpoints', () => {
     expect(duplicate.body.success).toBe(false);
   });
 
-  it('returns validation and not found errors for agent operations', async () => {
-    const invalid = await requestJson('/agents', {
+  it('supports default spawn settings and not found errors for agent operations', async () => {
+    const withDefaults = await requestJson('/agents', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: 'x', name: 'Missing command' }),
     });
-    expect(invalid.response.status).toBe(400);
+    expect(withDefaults.response.status).toBe(201);
 
     const missingId = `agent-missing-${randomUUID()}`;
     const getOne = await requestJson(`/agents/${missingId}`);
@@ -213,15 +213,15 @@ describe('subscriptions endpoints', () => {
   it('supports create/list/get/delete subscription', async () => {
     const created = await createAgent();
     const agentId = created.payload.id as string;
-    const room = await createRoom();
+    const channel = await createChannel();
 
     const create = await requestJson('/subscriptions', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         agentId,
-        targetType: 'room',
-        targetId: room.id,
+        targetType: 'channel',
+        targetId: channel.id,
       }),
     });
 
@@ -232,7 +232,7 @@ describe('subscriptions endpoints', () => {
     expect(listByAgent.response.status).toBe(200);
     expect(listByAgent.body.data.some((item: any) => item.id === subId)).toBe(true);
 
-    const listByTarget = await requestJson(`/subscriptions?targetType=room&targetId=${room.id}`);
+    const listByTarget = await requestJson(`/subscriptions?targetType=channel&targetId=${channel.id}`);
     expect(listByTarget.response.status).toBe(200);
     expect(listByTarget.body.data.some((item: any) => item.id === subId)).toBe(true);
 
@@ -265,7 +265,7 @@ describe('subscriptions endpoints', () => {
 
 describe('posts and mentions endpoints', () => {
   it('supports create/list/get/delete post and mention workflows', async () => {
-    const room = await createRoom();
+    const channel = await createChannel();
     const created = await createAgent();
     const agentId = created.payload.id as string;
 
@@ -273,7 +273,7 @@ describe('posts and mentions endpoints', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        roomId: room.id,
+        channelId: channel.id,
         authorId: 'author-1',
         content: `Hello @${agentId}`,
       }),
@@ -283,9 +283,9 @@ describe('posts and mentions endpoints', () => {
     const postId = createPost.body.data.id;
     expect(createPost.body.data.processedMentions).toBe(1);
 
-    const listByRoom = await requestJson(`/posts?roomId=${room.id}`);
-    expect(listByRoom.response.status).toBe(200);
-    expect(listByRoom.body.data.some((item: any) => item.id === postId)).toBe(true);
+    const listByChannel = await requestJson(`/posts?channelId=${channel.id}`);
+    expect(listByChannel.response.status).toBe(200);
+    expect(listByChannel.body.data.some((item: any) => item.id === postId)).toBe(true);
 
     const listAll = await requestJson('/posts');
     expect(listAll.response.status).toBe(200);
@@ -323,9 +323,9 @@ describe('posts and mentions endpoints', () => {
     expect(unreadOnly.response.status).toBe(200);
     expect(unreadOnly.body.data.length).toBe(0);
 
-    const mentionsByRoom = await requestJson(`/mentions?roomId=${room.id}`);
-    expect(mentionsByRoom.response.status).toBe(200);
-    expect(mentionsByRoom.body.data.length).toBeGreaterThan(0);
+    const mentionsByChannel = await requestJson(`/mentions?channelId=${channel.id}`);
+    expect(mentionsByChannel.response.status).toBe(200);
+    expect(mentionsByChannel.body.data.length).toBeGreaterThan(0);
 
     const del = await requestJson(`/posts/${postId}`, { method: 'DELETE' });
     expect(del.response.status).toBe(200);
@@ -335,20 +335,20 @@ describe('posts and mentions endpoints', () => {
     const invalidPost = await requestJson('/posts', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ roomId: '', authorId: '', content: '' }),
+      body: JSON.stringify({ channelId: '', authorId: '', content: '' }),
     });
     expect(invalidPost.response.status).toBe(400);
 
-    const missingRoomPost = await requestJson('/posts', {
+    const missingChannelPost = await requestJson('/posts', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        roomId: `room-missing-${randomUUID()}`,
+        channelId: `channel-missing-${randomUUID()}`,
         authorId: 'author-2',
         content: 'hello',
       }),
     });
-    expect(missingRoomPost.response.status).toBe(404);
+    expect(missingChannelPost.response.status).toBe(404);
 
     const missingPostId = `post-missing-${randomUUID()}`;
     const getPost = await requestJson(`/posts/${missingPostId}`);
@@ -377,7 +377,7 @@ describe('posts and mentions endpoints', () => {
 
 describe('mentions status board endpoints', () => {
   it('returns per-agent status summary and detailed status views', async () => {
-    const room = await createRoom({ name: 'Task Board Room' });
+    const channel = await createChannel({ name: 'Task Board Channel' });
     const agentA = await createAgent({ id: `status-a-${randomUUID()}`, name: 'Status Agent A' });
     const agentB = await createAgent({ id: `status-b-${randomUUID()}`, name: 'Status Agent B' });
     const agentAId = agentA.payload.id as string;
@@ -387,7 +387,7 @@ describe('mentions status board endpoints', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        roomId: room.id,
+        channelId: channel.id,
         authorId: 'status-author',
         content: `Work items for @${agentAId} and @${agentBId}`,
       }),
@@ -398,7 +398,7 @@ describe('mentions status board endpoints', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        roomId: room.id,
+        channelId: channel.id,
         authorId: 'status-author',
         content: `Follow-up for @${agentAId}`,
       }),
@@ -466,7 +466,7 @@ describe('mentions status board endpoints', () => {
     const missingAgent = await requestJson(`/mentions/status/agent-missing-${randomUUID()}`);
     expect(missingAgent.response.status).toBe(404);
 
-    const room = await createRoom({ name: 'Task Board Validation Room' });
+    const channel = await createChannel({ name: 'Task Board Validation Channel' });
     const created = await createAgent({ id: `sv-${randomUUID()}` });
     const agentId = created.payload.id as string;
 
@@ -474,7 +474,7 @@ describe('mentions status board endpoints', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        roomId: room.id,
+        channelId: channel.id,
         authorId: 'validator',
         content: `Task for @${agentId}`,
       }),
@@ -533,13 +533,13 @@ describe('notifications MVP', () => {
   });
 
   it('replays task and mention lifecycle events', async () => {
-    const room = await createRoom({ name: 'Event Replay Room' });
+    const channel = await createChannel({ name: 'Event Replay Channel' });
     const agent = await createAgent({
       id: `event-agent-${randomUUID()}`,
       spawnCommand: 'true',
     });
     const agentId = agent.payload.id as string;
-    await subscribeAgentToRoom(agentId, room.id);
+    await subscribeAgentToChannel(agentId, channel.id);
 
     const since = Date.now();
 
@@ -547,7 +547,7 @@ describe('notifications MVP', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        roomId: room.id,
+        channelId: channel.id,
         authorId: 'orchestrator',
         content: `Please run this @${agentId}`,
       }),
@@ -572,13 +572,13 @@ describe('notifications MVP', () => {
     const originalFetch = globalThis.fetch;
 
     try {
-      const room = await createRoom({ name: 'Webhook Delivery Room' });
+      const channel = await createChannel({ name: 'Webhook Delivery Channel' });
       const agent = await createAgent({
         id: `webhook-agent-${randomUUID()}`,
         spawnCommand: 'true',
       });
       const agentId = agent.payload.id as string;
-      await subscribeAgentToRoom(agentId, room.id);
+      await subscribeAgentToChannel(agentId, channel.id);
 
       const secret = 'webhook-signing-secret';
 
@@ -617,7 +617,7 @@ describe('notifications MVP', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          roomId: room.id,
+          channelId: channel.id,
           authorId: 'dispatcher',
           content: `Notify @${agentId}`,
         }),
@@ -638,13 +638,13 @@ describe('notifications MVP', () => {
   });
 
   it('streams live events via SSE', async () => {
-    const room = await createRoom({ name: 'SSE Room' });
+    const channel = await createChannel({ name: 'SSE Channel' });
     const agent = await createAgent({
       id: `sse-agent-${randomUUID()}`,
       spawnCommand: 'true',
     });
     const agentId = agent.payload.id as string;
-    await subscribeAgentToRoom(agentId, room.id);
+    await subscribeAgentToChannel(agentId, channel.id);
 
     const controller = new AbortController();
     const sseResponse = await app.request('/events/stream', {
@@ -662,7 +662,7 @@ describe('notifications MVP', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        roomId: room.id,
+        channelId: channel.id,
         authorId: 'stream-author',
         content: `Streaming @${agentId}`,
       }),

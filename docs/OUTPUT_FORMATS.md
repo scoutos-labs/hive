@@ -1,19 +1,19 @@
-# Hive Output Formats for Rooms Endpoints
+# Hive Output Formats for Channels Endpoints
 
 ## Scope
 
 This document covers response formats for:
 
-- `GET /rooms`
-- `GET /rooms/:id`
+- `GET /channels`
+- `GET /channels/:id`
 
 Goal: define the current behavior, evaluate multi-format output (JSON + Markdown), and recommend a strategy that is predictable for API clients and still friendly for humans.
 
 ## Current Output (as implemented)
 
-Source: `src/routes/rooms.ts`.
+Source: `src/routes/channels.ts`.
 
-### `GET /rooms`
+### `GET /channels`
 
 Always returns JSON with a paginated wrapper:
 
@@ -22,7 +22,7 @@ Always returns JSON with a paginated wrapper:
   "success": true,
   "data": [
     {
-      "id": "room_abcd1234",
+      "id": "channel_abcd1234",
       "name": "general",
       "description": "Main channel",
       "createdBy": "system",
@@ -40,11 +40,11 @@ Always returns JSON with a paginated wrapper:
 
 Notes:
 
-- Uses `PaginatedResponse<Room>`.
+- Uses `PaginatedResponse<Channel>`.
 - No query pagination is implemented yet (`limit=100`, `offset=0` are fixed).
-- Ordering follows `rooms!list` insertion order (no explicit sort in route).
+- Ordering follows `channels!list` insertion order (no explicit sort in route).
 
-### `GET /rooms/:id`
+### `GET /channels/:id`
 
 Success:
 
@@ -52,7 +52,7 @@ Success:
 {
   "success": true,
   "data": {
-    "id": "room_abcd1234",
+    "id": "channel_abcd1234",
     "name": "general",
     "description": "Main channel",
     "createdBy": "system",
@@ -69,7 +69,7 @@ Not found:
 ```json
 {
   "success": false,
-  "error": "Room not found"
+  "error": "Channel not found"
 }
 ```
 
@@ -140,9 +140,9 @@ Support both, with clear precedence:
 
 Example precedence behavior:
 
-- `/rooms?format=md` + `Accept: application/json` -> Markdown
-- `/rooms` + `Accept: text/markdown` -> Markdown
-- `/rooms` + no format hints -> JSON
+- `/channels?format=md` + `Accept: application/json` -> Markdown
+- `/channels` + `Accept: text/markdown` -> Markdown
+- `/channels` + no format hints -> JSON
 
 Pros:
 
@@ -156,7 +156,7 @@ Cons:
 
 ## Recommendation
 
-Adopt **Option D (Hybrid)** for `GET /rooms` and `GET /rooms/:id`.
+Adopt **Option D (Hybrid)** for `GET /channels` and `GET /channels/:id`.
 
 Rules:
 
@@ -175,12 +175,12 @@ Also send:
 
 ## Suggested Markdown Shapes
 
-### `GET /rooms` as Markdown
+### `GET /channels` as Markdown
 
 ```md
-# Rooms (1)
+# Channels (1)
 
-- `room_abcd1234` **general**
+- `channel_abcd1234` **general**
   - description: Main channel
   - createdBy: system
   - privacy: public
@@ -188,12 +188,12 @@ Also send:
   - createdAt: 2024-02-26T12:13:20.000Z
 ```
 
-### `GET /rooms/:id` as Markdown
+### `GET /channels/:id` as Markdown
 
 ```md
-# Room: general
+# Channel: general
 
-- id: `room_abcd1234`
+- id: `channel_abcd1234`
 - description: Main channel
 - createdBy: `system`
 - privacy: public
@@ -222,18 +222,18 @@ export function resolveResponseFormat(req: Request, queryFormat?: string): Respo
 }
 ```
 
-### 2) Add room markdown serializers
+### 2) Add channel markdown serializers
 
-Create `src/presenters/rooms-markdown.ts`:
+Create `src/presenters/channels-markdown.ts`:
 
-- `renderRoomsListMarkdown(rooms: Room[]): string`
-- `renderRoomMarkdown(room: Room): string`
+- `renderChannelsListMarkdown(channels: Channel[]): string`
+- `renderChannelMarkdown(channel: Channel): string`
 
 Keep this pure and deterministic so tests are straightforward.
 
 ### 3) Update routes
 
-In `src/routes/rooms.ts` for each GET route:
+In `src/routes/channels.ts` for each GET route:
 
 - resolve format from query + headers
 - if JSON: return current payload unchanged
@@ -241,8 +241,8 @@ In `src/routes/rooms.ts` for each GET route:
 
 Potential query support:
 
-- `GET /rooms?format=md`
-- `GET /rooms/:id?format=md`
+- `GET /channels?format=md`
+- `GET /channels/:id?format=md`
 
 ### 4) Testing plan
 
@@ -252,7 +252,7 @@ Add route tests for both endpoints covering:
 - `Accept: text/markdown`
 - `?format=md`
 - precedence (`format` over `Accept`)
-- 404 behavior for `GET /rooms/:id`
+- 404 behavior for `GET /channels/:id`
 
 ### 5) Documentation updates
 
@@ -265,21 +265,21 @@ After implementation, update:
 
 ```bash
 # JSON default
-curl http://localhost:3000/rooms
+curl http://localhost:3000/channels
 
 # Markdown via Accept
-curl -H "Accept: text/markdown" http://localhost:3000/rooms
+curl -H "Accept: text/markdown" http://localhost:3000/channels
 
 # Markdown via query parameter
-curl http://localhost:3000/rooms?format=md
+curl http://localhost:3000/channels?format=md
 
-# Single room as Markdown
-curl -H "Accept: text/markdown" http://localhost:3000/rooms/room_abcd1234
+# Single channel as Markdown
+curl -H "Accept: text/markdown" http://localhost:3000/channels/channel_abcd1234
 ```
 
 ## Decision Summary
 
 - Keep JSON as default and canonical contract.
-- Add optional Markdown for the two rooms GET endpoints.
+- Add optional Markdown for the two channels GET endpoints.
 - Use hybrid negotiation (`format` query param first, then `Accept`).
 - Keep markdown generation in dedicated presenter helpers to avoid route bloat.

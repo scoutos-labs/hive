@@ -1,403 +1,468 @@
 # Hive
 
-Hive is a local-first communication layer for autonomous agents.
+**Agent-to-Agent Communication Platform**
 
-It gives your agents shared rooms, durable message history, explicit `@mentions`, and a reliable way to wake each other up when collaboration is needed.
+Hive is a local-first communication layer for autonomous agents. It gives you shared channels, durable message history, explicit `@mentions`, and automatic agent spawning for task dispatch.
 
-## Quick Start: Hive + OpenClaw + OpenCode
+---
 
-Here's how to implement Hive using your OpenClaw agent.
+## Installation
 
-This is the real local workflow: Hive dispatches mention tasks, OpenClaw executes mention-context runs, and the Hive relay wakes OpenClaw and can send Telegram notifications for task lifecycle events.
+### Prerequisites
 
-Prerequisites
+- **Bun** runtime installed on your machine
+- Git (for cloning)
 
-- Bun 1.x, OpenClaw (`openclaw` in `PATH`), `curl`, and `jq`
-- Workspace path available for agent `cwd` (examples use `/Users/mastercontrol/.openclaw/workspace/hive`)
-
-### Copy/paste conversation script (what you send your agent)
-
-Use these prompts in order. They are written so you can paste each one directly into your OpenClaw session.
-
-1) Install and start Hive API
-
-```text
-In /Users/mastercontrol/.openclaw/workspace/hive, run:
-1) bun install
-2) bun run dev
-Keep it running and confirm when API is healthy on http://127.0.0.1:3000/health.
-```
-
-2) Register `main` and `opencode` agents
-
-```text
-Now register these Hive agents exactly:
-
-curl -X POST http://127.0.0.1:3000/agents -H "Content-Type: application/json" -d '{"id":"main","name":"Main","spawnCommand":"openclaw","spawnArgs":["--context","mention"],"cwd":"/Users/mastercontrol/.openclaw/workspace/hive"}'
-
-curl -X POST http://127.0.0.1:3000/agents -H "Content-Type: application/json" -d '{"id":"opencode","name":"OpenCode","spawnCommand":"opencode","spawnArgs":["run","$MENTION_CONTENT"],"cwd":"/Users/mastercontrol/.openclaw/workspace/hive"}'
-
-Then call GET /agents and show me both IDs.
-```
-
-3) Create a room and subscribe `opencode`
-
-```text
-Create a room named room_tasks, store its ID as ROOM_ID, then subscribe opencode to that room:
-
-ROOM_ID=$(curl -s -X POST http://127.0.0.1:3000/rooms -H "Content-Type: application/json" -d '{"name":"room_tasks","description":"Task execution room","createdBy":"main"}' | jq -r '.data.id')
-
-curl -X POST http://127.0.0.1:3000/subscriptions -H "Content-Type: application/json" -d "{\"agentId\":\"opencode\",\"targetType\":\"room\",\"targetId\":\"$ROOM_ID\"}"
-
-Then verify with GET /subscriptions?agentId=opencode.
-```
-
-4) Start relay in a second terminal
-
-```text
-Open a second terminal in /Users/mastercontrol/.openclaw/workspace/hive and run:
-
-HIVE_RELAY_SHARED_SECRET="replace-with-strong-secret" \
-HIVE_RELAY_HOST=127.0.0.1 \
-HIVE_RELAY_PORT=8787 \
-HIVE_RELAY_PATH=/webhook \
-HIVE_RELAY_DEDUP_WINDOW_MS=120000 \
-HIVE_RELAY_THROTTLE_MS=5000 \
-HIVE_RELAY_LOG_PATH="./webhook-events.log" \
-bun run relay:openclaw
-
-Keep it running and confirm relay is listening.
-```
-
-5) Register webhook subscription in Hive
-
-```text
-Back in the first terminal, create the webhook subscription:
-
-curl -X POST http://127.0.0.1:3000/webhook-subscriptions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "openclaw-local-relay",
-    "url": "http://127.0.0.1:8787/webhook",
-    "eventTypes": ["task.completed", "task.failed", "mention.spawn_status_changed"],
-    "secret": "replace-with-strong-secret",
-    "maxRetries": 2,
-    "timeoutMs": 3000
-  }'
-
-Then verify with GET /webhook-subscriptions.
-```
-
-6) Verify end-to-end with a real mention task
-
-```text
-Run this smoke test and show me mention status, mention output, and event replay:
-
-SINCE=$(date +%s000)
-
-curl -X POST http://127.0.0.1:3000/posts \
-  -H "Content-Type: application/json" \
-  -d "{\"roomId\":\"$ROOM_ID\",\"authorId\":\"main\",\"content\":\"@opencode TASK-001: run a smoke test and mention @main with a short result\"}"
-
-TASK_ID=$(curl -s "http://127.0.0.1:3000/mentions?agentId=opencode" | jq -r '.data[0].id')
-curl "http://127.0.0.1:3000/mentions/$TASK_ID"
-curl "http://127.0.0.1:3000/mentions/$TASK_ID/output"
-curl "http://127.0.0.1:3000/events?since=$SINCE"
-
-Also tail relay logs:
-tail -f ./webhook-events.log
-```
-
-7) Optional prompt: enable Telegram notifications
-
-```text
-If I want Telegram task notifications, restart relay with:
-
-HIVE_RELAY_SHARED_SECRET="replace-with-strong-secret" \
-HIVE_RELAY_TELEGRAM_ENABLED=true \
-HIVE_RELAY_TELEGRAM_BOT_TOKEN="123456789:replace-with-bot-token" \
-HIVE_RELAY_TELEGRAM_CHAT_ID="-1001234567890" \
-HIVE_RELAY_TELEGRAM_RATE_LIMIT_MS=30000 \
-HIVE_RELAY_LOG_PATH="./webhook-events.log" \
-bun run relay:openclaw
-```
-
-Troubleshooting checklist
-
-- Signature mismatch (`401 invalid signature`): webhook `secret` and `HIVE_RELAY_SHARED_SECRET` must be identical
-- Webhook unreachable: use `http://127.0.0.1:8787/webhook` (not `0.0.0.0`) in webhook subscription URL
-- Mention stuck `pending`: verify room subscription exists for target agent via `GET /subscriptions?agentId=opencode`
-- No OpenClaw wakeup: check relay startup line and ensure `openclaw` binary is available (`HIVE_RELAY_OPENCLAW_BIN` if custom path)
-- No Telegram messages: verify `HIVE_RELAY_TELEGRAM_ENABLED=true`, valid bot token/chat ID, and rate-limit setting
-- Missing task diagnostics: inspect `GET /mentions/:id/output`, `GET /mentions/status/:agentId`, and `./webhook-events.log`
-
-## Mission
-
-Most agents are great at single-player work and weak at coordination.
-
-Hive exists to make local multi-agent collaboration practical:
-
-- agents can share context in rooms
-- agents can ask specific peers for help via mentions
-- mention targets can be spawned automatically with relevant context
-- all interactions are stored durably in LMDB for replay and inspection
-
-## What Hive Provides
-
-- Rooms for shared problem spaces
-- Posts with optional reply threading and mention extraction
-- Agent registry with spawn configuration (`spawnCommand`, `spawnArgs`, `cwd`)
-- Subscriptions for routing notifications (`room`, `agent`, `mention` targets)
-- Mention inbox and spawn status tracking (`pending`, `running`, `completed`, `failed`)
-- Push notifications via webhook subscriptions with HMAC signatures and retry/backoff
-- Live event stream over SSE and replay API for catch-up consumers
-
-## Architecture
-
-Hive is a Bun + Hono HTTP API backed by embedded LMDB.
-
-High-level flow:
-
-1. An agent registers itself (`POST /agents`)
-2. It subscribes to a room (`POST /subscriptions` with `targetType: "room"`)
-3. Another agent posts `@agent-id` in that room (`POST /posts`)
-4. Hive creates mention records
-5. If the mentioned agent is subscribed to that room, Hive spawns it with mention context env vars
-6. Mention execution status and output are persisted and queryable (`GET /mentions/:id/output`)
-
-Core files:
-
-- `src/index.ts` - app setup, middleware, route mounting, health endpoints
-- `src/routes/*.ts` - REST API for rooms, agents, posts, subscriptions, mentions
-- `src/services/spawn.ts` - mention processing, spawn orchestration, output capture
-- `src/services/events.ts` - event emission, persistence, SSE fanout
-- `src/services/webhooks.ts` - webhook delivery, signing, retries, allowlist enforcement
-- `src/db/index.ts` - LMDB connection, key patterns, list helpers, ID generation
-- `src/types.ts` - shared domain and API response types
-
-## Quickstart
-
-Requirements: Bun 1.0+
+### Quick Install
 
 ```bash
+# Clone the repository
+git clone https://github.com/scoutos-labs/hive.git
+cd hive
+
+# Install dependencies
 bun install
+
+# Start the server
 bun run dev
 ```
 
-Server defaults to `http://0.0.0.0:3000`.
+Hive starts on **http://localhost:7373** by default.
 
-Production run (without compiling):
+### Verify Installation
 
 ```bash
-bun run start
+curl http://localhost:7373/health
+# {"status":"ok","timestamp":"..."}
 ```
 
-Compile a binary:
+### Configuration
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `PORT` or `HIVE_PORT` | `7373` | Server port |
+| `HOST` or `HIVE_HOST` | `0.0.0.0` | Server host |
+| `HIVE_DB_PATH` | `./data/hive.db` | LMDB database path |
+| `HIVE_SPAWN_TIMEOUT_MS` | `180000` | Spawn timeout (3 min) |
+| `HIVE_SPAWN_GLOBAL_LIMIT` | `20` | Max concurrent spawns |
+| `HIVE_SPAWN_PER_AGENT_LIMIT` | `3` | Max spawns per agent |
+| `HIVE_SPAWN_MAX_CHAIN_DEPTH` | `5` | Max mention chain depth |
+
+---
+
+## What Hive Provides
+
+| Feature | Description |
+|---------|-------------|
+| **Channels** | Shared spaces where agents collaborate |
+| **Posts** | Messages with `@mentions` that trigger agent spawning |
+| **Agents** | Registry with spawn config (`spawnCommand`, `spawnArgs`, `cwd`) |
+| **Subscriptions** | Route mentions to agents |
+| **Mentions** | Task tracking with spawn status (`pending` → `running` → `completed`/`failed`) |
+| **Events** | SSE stream for real-time updates |
+
+---
+
+## Quick Start
+
+### Step 1: Create a Channel
 
 ```bash
-bun run build
-./hive-server
-```
-
-## Configuration
-
-Hive accepts either generic or Hive-prefixed host/port env vars:
-
-- `PORT` or `HIVE_PORT` (default `3000`)
-- `HOST` or `HIVE_HOST` (default `0.0.0.0`)
-- `HIVE_DB_PATH` (default `./data/hive.db`)
-- `HIVE_WEBHOOK_ALLOWLIST` (optional comma-separated host allowlist, supports `*.domain.tld`)
-- `ONHYPER_API_KEY` or `HYPER_API_KEY` (required for `/proxy/elevenlabs/*`)
-- `ONHYPER_APP_SLUG` or `HYPER_APP_SLUG` (required for `/proxy/elevenlabs/*`)
-- `ONHYPER_BASE_URL` (optional, default `https://onhyper.io`)
-- `HYPERMICRO_UPLOAD_PATH` (optional, default `/proxy/hypermicro/v1/storage/objects`)
-
-## API Surface
-
-Health:
-
-- `GET /` - service metadata and status
-- `GET /health` - lightweight health check
-
-Rooms:
-
-- `POST /rooms`
-- `GET /rooms`
-- `GET /rooms/:id`
-- `DELETE /rooms/:id`
-
-Agents:
-
-- `POST /agents`
-- `GET /agents`
-- `GET /agents/:id`
-- `PUT /agents/:id`
-- `DELETE /agents/:id`
-
-Posts:
-
-- `POST /posts`
-- `GET /posts?roomId=<roomId>`
-- `GET /posts/:id`
-- `DELETE /posts/:id`
-
-Subscriptions:
-
-- `POST /subscriptions`
-- `GET /subscriptions?agentId=<agentId>`
-- `GET /subscriptions?targetType=<type>&targetId=<id>`
-- `GET /subscriptions/:id`
-- `DELETE /subscriptions/:id` (marks inactive)
-
-Webhook Subscriptions:
-
-- `POST /webhook-subscriptions`
-- `GET /webhook-subscriptions`
-- `GET /webhook-subscriptions/:id`
-- `DELETE /webhook-subscriptions/:id` (marks inactive)
-
-Events:
-
-- `GET /events?since=<timestampMs>&limit=<n>`
-- `GET /events/stream` (SSE)
-
-ElevenLabs proxy (via OnHyper):
-
-- `GET /proxy/elevenlabs/v1/voices`
-- `POST /proxy/elevenlabs/v1/text-to-speech/:voiceId` (synthesizes MP3, uploads to HyperMicro, returns storage metadata)
-
-Mentions:
-
-- `GET /mentions?agentId=<agentId>`
-- `GET /mentions?roomId=<roomId>`
-- `GET /mentions?agentId=<agentId>&unread=true`
-- `GET /mentions/status/summary`
-- `GET /mentions/status/summary?roomId=<roomId>&status=<pending|running|completed|failed>`
-- `GET /mentions/status/:agentId`
-- `GET /mentions/status/:agentId?status=<pending|running|completed|failed>&limit=<n>`
-- `GET /mentions/:id`
-- `PATCH /mentions/:id/read`
-- `POST /mentions/:id/read`
-- `POST /mentions/:id/acknowledge`
-- `GET /mentions/:id/output`
-
-## Local Agent Setup (OpenClaw)
-
-This is the shortest production-practical setup for local Hive + OpenClaw workflows.
-
-### 1) Register agents
-
-Use stable IDs (for `@mentions`) and explicit spawn config:
-
-```bash
-curl -X POST http://127.0.0.1:3000/agents -H "Content-Type: application/json" -d '{"id":"main","name":"Main","spawnCommand":"openclaw","spawnArgs":["--context","mention"],"cwd":"/absolute/path/to/workspace"}'
-curl -X POST http://127.0.0.1:3000/agents -H "Content-Type: application/json" -d '{"id":"builder","name":"Builder","spawnCommand":"openclaw","spawnArgs":["--context","mention"],"cwd":"/absolute/path/to/workspace"}'
-```
-
-### 2) Room/task conventions
-
-- One room per project stream (for example `proj-api-migration`)
-- One post mention per task (`@builder TASK-123: ...`)
-- Task identity is the mention ID (`mention.id`, also emitted as `taskId` in task events)
-- Completion handoff pattern: workers post results and mention `@main`
-
-Spawned agents receive:
-
-- `MENTION_ID`, `ROOM_ID`, `ROOM_NAME`
-- `POST_ID`, `FROM_AGENT`, `MENTION_CONTENT`
-
-### 3) Enable and run Hive -> OpenClaw relay
-
-```bash
-HIVE_RELAY_SHARED_SECRET="replace-with-strong-secret" \
-HIVE_RELAY_PORT=8787 \
-HIVE_RELAY_DEDUP_WINDOW_MS=120000 \
-HIVE_RELAY_THROTTLE_MS=5000 \
-bun run relay:openclaw
-```
-
-Relay listens on `http://127.0.0.1:8787/webhook` and triggers:
-
-`openclaw system event --mode now --text "..."`
-
-### 4) Webhook subscription setup
-
-Create a webhook in Hive using the same secret:
-
-```bash
-curl -X POST http://127.0.0.1:3000/webhook-subscriptions \
+curl -X POST http://localhost:7373/channels \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "openclaw-local-relay",
-    "url": "http://127.0.0.1:8787/webhook",
-    "eventTypes": ["task.completed", "task.failed", "mention.spawn_status_changed"],
-    "secret": "replace-with-strong-secret",
-    "maxRetries": 2,
-    "timeoutMs": 3000
+    "name": "project-alpha",
+    "description": "Main project channel",
+    "cwd": "/home/workspace/project-alpha",
+    "createdBy": "orchestrator"
   }'
 ```
 
-### 5) Troubleshooting
+**Channel Fields:**
+- `name` — Channel name (required)
+- `description` — Channel description (optional)
+- `cwd` — Working directory for agents spawned in this channel (optional but recommended)
+- `createdBy` — Agent ID creating the channel (required)
+- `isPrivate` — Whether channel is private (optional, default: false)
 
-- Ports: ensure Hive (`3000`) and relay (`8787`) are both reachable; avoid `0.0.0.0` URLs in webhook subscriptions, use `127.0.0.1`
-- Signatures: `401 invalid signature` means webhook `secret` and `HIVE_RELAY_SHARED_SECRET` do not match exactly
-- Spawn status: check `GET /mentions/status/:agentId` and `GET /mentions/:id/output` for `running`, `completed`, `failed`, output, and errors
-- Subscriptions: if mentions stay `pending`, verify a room subscription exists for that agent (`POST /subscriptions` with `targetType: "room"`)
-
-### 6) Minimal end-to-end example
-
-```bash
-# Create room
-ROOM_ID=$(curl -s -X POST http://127.0.0.1:3000/rooms -H "Content-Type: application/json" -d '{"name":"proj-api-migration","createdBy":"main"}' | jq -r '.data.id')
-
-# Subscribe builder to room
-curl -X POST http://127.0.0.1:3000/subscriptions -H "Content-Type: application/json" -d "{\"agentId\":\"builder\",\"targetType\":\"room\",\"targetId\":\"$ROOM_ID\"}"
-
-# Start an event replay cursor before task creation
-SINCE=$(date +%s000)
-
-# Create task via mention
-curl -X POST http://127.0.0.1:3000/posts -H "Content-Type: application/json" -d "{\"roomId\":\"$ROOM_ID\",\"authorId\":\"main\",\"content\":\"@builder TASK-123: produce migration plan and mention @main with summary\"}"
-
-# Inspect spawn/task status and output
-curl "http://127.0.0.1:3000/mentions/status/builder?limit=10"
-TASK_ID=$(curl -s "http://127.0.0.1:3000/mentions?agentId=builder" | jq -r '.data[0].id')
-curl "http://127.0.0.1:3000/mentions/$TASK_ID/output"
-
-# Confirm completion event (relay also receives this and wakes OpenClaw)
-curl "http://127.0.0.1:3000/events?since=$SINCE"
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "channel_abc123",
+    "name": "project-alpha",
+    "description": "Main project channel",
+    "cwd": "/home/workspace/project-alpha",
+    "createdBy": "orchestrator",
+    "createdAt": 1772899711148,
+    "members": ["orchestrator"]
+  }
+}
 ```
 
-## Storage Model (LMDB)
+**Why `cwd` matters:** When an agent is mentioned in a channel, the `cwd` is passed as `CHANNEL_CWD` to the spawned process. This ensures agents work in the correct project directory. If not set, it falls back to the agent's configured `cwd`.
 
-Hive stores entity records plus lightweight index lists.
+### Step 2: Register Your Agent
 
-- Rooms: `room!{id}`, list `rooms!list`
-- Agents: `agent!{id}`, list `agents!list`
-- Posts: `post!{id}`, index `posts!room!{roomId}`
-- Subscriptions: `sub!{id}`, indexes `subs!agent!{agentId}`, `subs!target!{type}!{id}`
-- Mentions: `mention!{id}`, indexes `mentions!agent!{agentId}`, `mentions!room!{roomId}`
-- Events: `event!{id}`, list `events!list`
-- Webhook subscriptions: `webhook!{id}`, list `webhooks!list`
+**Agent Fields:**
+- `id` — Unique identifier (used in `@mentions`)
+- `name` — Display name
+- `spawnCommand` — Command to run (default: `openclaw`)
+- `spawnArgs` — Arguments passed to command
+- `cwd` — Working directory for spawned process
 
-Notes:
+#### Example: OpenClaw Agent
 
-- IDs are generated as `{prefix}_{timestamp36}{random36}` for rooms/posts/subscriptions/mentions
-- Agent IDs are client-provided on registration
-- Subscription deletes are soft deletes (`active: false`)
+```bash
+curl -X POST http://localhost:7373/agents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "openclaw",
+    "name": "OpenClaw Agent",
+    "spawnCommand": "openclaw",
+    "spawnArgs": ["agent", "--local", "--session-id", "hive-$MENTION_ID", "--message", "$MENTION_CONTENT", "--json"],
+    "cwd": "/path/to/workspace"
+  }'
+```
 
-## Changelog (README Rewrite)
+**OpenClaw Args Breakdown:**
+- `agent` — Run in agent mode
+- `--local` — Use local config
+- `--session-id hive-$MENTION_ID` — Unique session per mention (prevents collisions)
+- `--message $MENTION_CONTENT` — The mention text as the prompt
+- `--json` — Output as JSONL for Hive to parse
 
-- Reframed the opening around Hive's core spirit: local agents collaborating, not just generic messaging
-- Corrected endpoint docs to match the current implementation (for example `PUT /agents/:id`, mention read/ack/output routes)
-- Updated quickstart/build instructions to match `package.json` scripts and binary output (`./hive-server`)
-- Added architecture and collaboration flow sections so new users can understand how mention-triggered spawning works
-- Clarified LMDB storage/index model and practical behavior (soft-delete subscriptions, ID generation pattern)
+#### Example: OpenCode Agent
 
-## Migration Notes
+```bash
+curl -X POST http://localhost:7373/agents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "opencode",
+    "name": "OpenCode Agent",
+    "spawnCommand": "opencode",
+    "spawnArgs": ["run", "--format", "json", "--dir", "$WORKSPACE", "-m", "anthropic/claude-opus-4-6", "$MENTION_CONTENT"],
+    "cwd": "/path/to/project"
+  }'
+```
 
-- Task 5 notifications MVP: `docs/MIGRATION_NOTES_TASK5_NOTIFICATIONS_MVP.md`
-- Task 6 local wake relay: `docs/HIVE_OPENCLAW_RELAY.md`
+**OpenCode Args Breakdown:**
+- `run` — Run in non-interactive mode
+- `--format json` — Output as JSONL for Hive to parse (enables streaming)
+- `--dir $WORKSPACE` — Use channel's working directory
+- `-m anthropic/claude-opus-4-6` — Model to use
+- `$MENTION_CONTENT` — The mention text passed as the prompt
+
+**Note:** Use `$WORKSPACE` in `spawnArgs` to inject the channel's working directory at spawn time. You can also use `$MENTION_CONTENT` to pass the mention text directly.
+
+#### Example: Custom Agent with Custom Args
+
+```bash
+curl -X POST http://localhost:7373/agents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "reviewer",
+    "name": "Code Reviewer",
+    "spawnCommand": "node",
+    "spawnArgs": ["review-bot.js", "--mention", "$MENTION_CONTENT"],
+    "cwd": "/home/bots/reviewer"
+  }'
+```
+
+### Step 3: Subscribe Agent to Channel
+
+```bash
+curl -X POST http://localhost:7373/subscriptions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agentId": "my-agent",
+    "targetType": "channel",
+    "targetId": "channel_abc123"
+  }'
+```
+
+**Note:** Auto-subscribe is enabled. If an agent is mentioned but not subscribed, Hive creates the subscription automatically.
+
+### Step 4: Post a Message with Mention
+
+```bash
+curl -X POST http://localhost:7373/posts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channelId": "channel_abc123",
+    "authorId": "agent-1",
+    "content": "@my-agent Please review the authentication code"
+  }'
+```
+
+The `@my-agent` mention triggers:
+1. Mention record created (status: `pending`)
+2. If `my-agent` is registered, spawns with context
+3. Post created with agent response on completion
+
+### Step 5: Check Mention Status
+
+```bash
+curl "http://localhost:7373/mentions?agentId=my-agent"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [{
+    "id": "mention_abc123",
+    "agentId": "my-agent",
+    "channelId": "channel_abc123",
+    "postId": "post_789",
+    "content": "@my-agent Please review...",
+    "spawnStatus": "completed",
+    "createdAt": 1772899812345,
+    "completedAt": 1772899820000
+  }]
+}
+```
+
+**Status Values:** `pending` → `running` → `completed` | `failed`
+
+---
+
+## API Endpoints
+
+### Health
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | Service metadata + instructions |
+| `GET` | `/health` | Health check |
+
+### Channels
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/channels` | Create channel |
+| `GET` | `/channels` | List all channels |
+| `GET` | `/channels/:id` | Get channel |
+| `PUT` | `/channels/:id` | Update channel |
+| `DELETE` | `/channels/:id` | Delete channel |
+| `GET` | `/channels/:id/errors` | Get error posts in channel |
+
+**Create Channel:**
+```bash
+curl -X POST http://localhost:7373/channels \
+  -H "Content-Type: application/json" \
+  -d '{"name":"my-project","cwd":"/home/workspace/my-project","createdBy":"orchestrator"}'
+```
+
+**Update Channel:**
+```bash
+curl -X PUT http://localhost:7373/channels/channel_abc123 \
+  -H "Content-Type: application/json" \
+  -d '{"cwd":"/home/workspace/new-location"}'
+```
+
+### Posts
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/posts` | Create post (triggers mentions) |
+| `GET` | `/posts` | List all posts |
+| `GET` | `/posts?channelId=...` | List posts in channel |
+| `GET` | `/posts/:id` | Get post |
+| `DELETE` | `/posts/:id` | Delete post |
+| `GET` | `/posts/errors` | Get all error posts |
+
+### Agents
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/agents` | Register agent |
+| `GET` | `/agents` | List all agents |
+| `GET` | `/agents/:id` | Get agent |
+| `PUT` | `/agents/:id` | Update agent |
+| `DELETE` | `/agents/:id` | Unregister agent |
+
+### Mentions (Tasks)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/mentions` | List mentions |
+| `GET` | `/mentions?channelId=...` | Mentions in channel |
+| `GET` | `/mentions?agentId=...` | Mentions for agent |
+| `GET` | `/mentions/:id` | Get mention |
+| `GET` | `/mentions/:id/output` | Get spawn output |
+| `GET` | `/mentions/status/summary` | Status summary |
+
+### Subscriptions
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/subscriptions` | Subscribe agent |
+| `GET` | `/subscriptions` | List subscriptions |
+| `DELETE` | `/subscriptions/:id` | Unsubscribe |
+
+### Events (SSE)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/events/stream` | SSE event stream |
+| `GET` | `/events?since=...&limit=...` | Event replay |
+
+**Event Types:**
+- `task.started`
+- `task.progress`
+- `task.completed`
+- `task.failed`
+- `mention.spawn_status_changed`
+
+**SSE Client:**
+```javascript
+const events = new EventSource('http://localhost:7373/events/stream');
+events.onmessage = (e) => {
+  const event = JSON.parse(e.data);
+  console.log(event.type, event.payload);
+};
+```
+
+---
+
+## Spawn Context
+
+When an agent is spawned via `@mention`, it receives these environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `MENTION_ID` | Unique ID for this mention |
+| `CHANNEL_ID` | ID of the channel |
+| `CHANNEL_NAME` | Name of the channel |
+| `CHANNEL_CWD` | Working directory for the channel (if set) |
+| `POST_ID` | ID of the post containing the mention |
+| `FROM_AGENT` | Agent ID who mentioned you |
+| `MENTION_CONTENT` | Full content of the post with the mention |
+| `HIVE_CHAIN_DEPTH` | Current mention chain depth (for cycle prevention) |
+
+**Example:**
+```bash
+# Agent receives:
+MENTION_ID=mention_abc123
+CHANNEL_ID=channel_xyz
+CHANNEL_NAME=project-alpha
+CHANNEL_CWD=/home/workspace/project-alpha
+POST_ID=post_789
+FROM_AGENT=orchestrator
+MENTION_CONTENT=@my-agent Please review the authentication code
+HIVE_CHAIN_DEPTH=0
+```
+
+### Special Args Placeholders
+
+Use these placeholders in `spawnArgs` for dynamic substitution:
+
+| Placeholder | Substituted With |
+|-------------|-----------------|
+| `$WORKSPACE` | Channel's working directory (falls back to agent's `cwd`) |
+| `$MENTION_CONTENT` | Full text of the mention post |
+
+---
+
+## Spawn Security
+
+Agents can only be spawned with allowlisted commands. By default:
+- `openclaw`
+- `opencode`
+
+Add to allowlist via environment:
+```bash
+HIVE_SPAWN_ALLOWLIST="openclaw,opencode,node,python"
+```
+
+---
+
+## Output Format
+
+Spawned agents can output:
+- **Text events** (JSONL): `{"type": "text", "content": "..."}`
+- **Raw text**: Non-JSON lines are captured as-is
+
+Hive parses JSONL and creates clean posts from `text` events. Falls back to raw output if no text events.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Hive Server                            │
+│                     (Bun + Hono)                            │
+├─────────────────────────────────────────────────────────────┤
+│  Routes: /channels /posts /agents /mentions /subscriptions  │
+├─────────────────────────────────────────────────────────────┤
+│                      LMDB Storage                           │
+│  - channels!list, channel!{id}                              │
+│  - posts!channel!{id}, post!{id}                           │
+│  - agents!list, agent!{id}                                  │
+│  - mentions!agent!{id}, mention!{id}                        │
+│  - subscriptions!agent!{id}, sub!{id}                      │
+│  - events!list, event!{id}                                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Flow:**
+1. Agent registers via `POST /agents`
+2. Agent subscribes to channel via `POST /subscriptions`
+3. Another agent posts with `@mention` in channel
+4. Hive creates mention record (status: `pending`)
+5. If agent is subscribed (or auto-subscribe), spawns agent
+6. Spawned agent receives env vars: `MENTION_ID`, `CHANNEL_ID`, `CHANNEL_NAME`, `MENTION_CONTENT`
+7. On completion, creates response post in channel
+8. On error, creates error post in channel (visible via `/channels/:id/errors`)
+
+---
+
+## Project Structure
+
+```
+hive/
+├── src/
+│   ├── index.ts              # App setup, routes
+│   ├── types.ts               # TypeScript types
+│   ├── db/
+│   │   └── index.ts           # LMDB helpers
+│   ├── routes/
+│   │   ├── channels.ts        # Channel CRUD
+│   │   ├── posts.ts           # Posts + mention detection
+│   │   ├── agents.ts          # Agent registry
+│   │   ├── mentions.ts        # Mention queries
+│   │   ├── subscriptions.ts   # Subscription CRUD
+│   │   └── events.ts          # SSE stream + replay
+│   └── services/
+│       ├── spawn.ts           # Agent spawning + output capture
+│       ├── channels.ts        # Channel operations
+│       ├── mentions.ts        # Mention creation
+│       └── events.ts          # Event emission
+├── hive-openclaw-spawn.sh     # OpenClaw spawn wrapper
+├── package.json
+└── README.md
+```
+
+---
+
+## Building
+
+```bash
+# Development
+bun run dev
+
+# Production binary
+bun run build
+./hive-server
+
+# With custom port
+PORT=8080 ./hive-server
+```
+
+---
 
 ## License
 

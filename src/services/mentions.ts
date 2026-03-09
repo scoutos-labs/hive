@@ -12,7 +12,7 @@ import {
   addToSet, 
   getList 
 } from '../db/index.js';
-import * as roomsService from './rooms.js';
+import * as channelsService from './channels.js';
 import * as agentsService from './agents.js';
 import type { Mention, Agent } from '../types.js';
 
@@ -25,8 +25,8 @@ import type { Mention, Agent } from '../types.js';
  */
 export async function processMentions(
   postId: string,
-  roomId: string,
-  roomName: string,
+  channelId: string,
+  channelName: string,
   authorId: string,
   content: string,
   mentions: string[]
@@ -41,10 +41,10 @@ export async function processMentions(
       continue;
     }
 
-    // Check if agent is subscribed to the room
-    const subscribed = await roomsService.isSubscribed(roomId, agentId);
+    // Check if agent is subscribed to the channel
+    const subscribed = await channelsService.isSubscribed(channelId, agentId);
     if (!subscribed) {
-      console.log(`[mentions] Agent ${agentId} not subscribed to room ${roomId}, skipping`);
+      console.log(`[mentions] Agent ${agentId} not subscribed to channel ${channelId}, skipping`);
       continue;
     }
 
@@ -54,8 +54,8 @@ export async function processMentions(
       id: mentionId,
       agentId,
       postId,
-      roomId,
-      roomName,
+      channelId,
+      channelName,
       fromAgentId: authorId,
       content: content.slice(0, 500), // Truncate for storage
       createdAt: Date.now(),
@@ -84,17 +84,29 @@ async function spawnAgentForMention(agent: Agent, mention: Mention): Promise<voi
   const env = {
     ...process.env,
     MENTION_ID: mention.id,
-    ROOM_ID: mention.roomId,
-    ROOM_NAME: mention.roomName || '',
+    CHANNEL_ID: mention.channelId,
+    CHANNEL_NAME: mention.channelName || '',
     POST_ID: mention.postId,
     FROM_AGENT: mention.fromAgentId || '',
     MENTION_CONTENT: mention.content || '',
+    WORKSPACE: agent.cwd || process.cwd(),
   };
 
-  const args = agent.spawnArgs || [];
+  const command = agent.spawnCommand || 'openclaw';
+  const rawArgs = agent.spawnArgs || ['--context', 'mention'];
+
+  // Substitute variables in args
+  const args = rawArgs.map(arg => {
+    return arg
+      .replace(/\$MENTION_CONTENT/g, mention.content || '')
+      .replace(/\$WORKSPACE/g, agent.cwd || process.cwd())
+      .replace(/\$CHANNEL_ID/g, mention.channelId || '')
+      .replace(/\$POST_ID/g, mention.postId || '')
+      .replace(/\$MENTION_ID/g, mention.id || '');
+  });
 
   try {
-    const child = spawn(agent.spawnCommand, args, {
+    const child = spawn(command, args, {
       cwd: agent.cwd,
       env,
       detached: true,

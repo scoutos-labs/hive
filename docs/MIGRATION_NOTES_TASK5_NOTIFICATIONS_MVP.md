@@ -68,4 +68,4 @@ HIVE_WEBHOOK_ALLOWLIST="hooks.internal.local,*.svc.cluster.local"
 
 ## No breaking endpoint changes
 
-Existing `/rooms`, `/agents`, `/posts`, `/subscriptions`, and `/mentions` routes remain compatible.
+Existing `/channels`, `/agents`, `/posts`, `/subscriptions`, and `/mentions` routes remain compatible.

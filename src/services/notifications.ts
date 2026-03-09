@@ -44,10 +44,10 @@ export async function notifyAgent(agentId: string, payload: NotificationPayload)
 }
 
 /**
- * Notify all subscribers of a new post in a room
+ * Notify all subscribers of a new post in a channel
  */
-export async function notifyRoomSubscribers(post: Post): Promise<void> {
-  const subIds = await getList<string>(subsByTargetKey('room', post.roomId));
+export async function notifyChannelSubscribers(post: Post): Promise<void> {
+  const subIds = await getList<string>(subsByTargetKey('channel', post.channelId));
   
   for (const id of subIds) {
     const sub = await db.get(subKey(id));

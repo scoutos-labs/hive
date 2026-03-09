@@ -10,7 +10,7 @@ import {
   agentsListKey,
   mentionKey, 
   mentionsByAgentKey, 
-  mentionsByRoomKey, 
+  mentionsByChannelKey, 
   getList,
 } from '../db/index.js';
 import type { Mention, ApiResponse, PaginatedResponse } from '../types.js';
@@ -37,8 +37,8 @@ type AgentStatusSummary = {
 type AgentStatusDetailMention = {
   id: string;
   postId: string;
-  roomId: string;
-  roomName?: string;
+  channelId: string;
+  channelName?: string;
   fromAgentId?: string;
   createdAt: number;
   completedAt?: number;
@@ -77,15 +77,15 @@ function isValidStatus(value: string | undefined): boolean {
 // GET /mentions - List mentions (filter by agentId)
 mentionsRouter.get('/', async (c) => {
   const agentId = c.req.query('agentId');
-  const roomId = c.req.query('roomId');
+  const channelId = c.req.query('channelId');
   const unreadOnly = c.req.query('unread') === 'true';
   
   let mentionIds: string[] = [];
   
   if (agentId) {
     mentionIds = await getList<string>(mentionsByAgentKey(agentId));
-  } else if (roomId) {
-    mentionIds = await getList<string>(mentionsByRoomKey(roomId));
+  } else if (channelId) {
+    mentionIds = await getList<string>(mentionsByChannelKey(channelId));
   }
   
   const mentions: Mention[] = [];
@@ -111,7 +111,7 @@ mentionsRouter.get('/', async (c) => {
 
 // GET /mentions/status/summary - Task board summary grouped by agent
 mentionsRouter.get('/status/summary', async (c) => {
-  const roomId = c.req.query('roomId');
+  const channelId = c.req.query('channelId');
   const statusQuery = c.req.query('status');
 
   if (!isValidStatus(statusQuery)) {
@@ -134,7 +134,7 @@ mentionsRouter.get('/status/summary', async (c) => {
     for (const mentionId of mentionIds) {
       const mention = db.get(mentionKey(mentionId)) as Mention | undefined;
       if (!mention) continue;
-      if (roomId && mention.roomId !== roomId) continue;
+      if (channelId && mention.channelId !== channelId) continue;
 
       const status = normalizeMentionStatus(mention);
       if (statusFilter && status !== statusFilter) continue;
@@ -170,14 +170,14 @@ mentionsRouter.get('/status/summary', async (c) => {
   return c.json<ApiResponse<{
     agents: AgentStatusSummary[];
     totals: MentionStatusCounts;
-    filters: { roomId?: string; status?: MentionStatus };
+    filters: { channelId?: string; status?: MentionStatus };
   }>>({
     success: true,
     data: {
       agents: agentSummaries,
       totals,
       filters: {
-        roomId: roomId || undefined,
+        channelId: channelId || undefined,
         status: statusFilter || undefined,
       },
     },
@@ -188,7 +188,7 @@ mentionsRouter.get('/status/summary', async (c) => {
 mentionsRouter.get('/status/:agentId', async (c) => {
   const { agentId } = c.req.param();
   const statusQuery = c.req.query('status');
-  const roomId = c.req.query('roomId');
+  const channelId = c.req.query('channelId');
   const limitQuery = c.req.query('limit');
 
   if (!isValidStatus(statusQuery)) {
@@ -219,7 +219,7 @@ mentionsRouter.get('/status/:agentId', async (c) => {
   for (const mentionId of mentionIds) {
     const mention = db.get(mentionKey(mentionId)) as Mention | undefined;
     if (!mention) continue;
-    if (roomId && mention.roomId !== roomId) continue;
+    if (channelId && mention.channelId !== channelId) continue;
 
     const status = normalizeMentionStatus(mention);
     if (statusFilter && status !== statusFilter) continue;
@@ -230,8 +230,8 @@ mentionsRouter.get('/status/:agentId', async (c) => {
     detailMentions.push({
       id: mention.id,
       postId: mention.postId,
-      roomId: mention.roomId,
-      roomName: mention.roomName,
+      channelId: mention.channelId,
+      channelName: mention.channelName,
       fromAgentId: mention.fromAgentId || mention.mentioningAgentId,
       createdAt: mention.createdAt,
       completedAt: mention.completedAt,
@@ -249,7 +249,7 @@ mentionsRouter.get('/status/:agentId', async (c) => {
     agentName?: string;
     counts: MentionStatusCounts;
     mentions: AgentStatusDetailMention[];
-    filters: { roomId?: string; status?: MentionStatus; limit: number };
+    filters: { channelId?: string; status?: MentionStatus; limit: number };
   }>>({
     success: true,
     data: {
@@ -258,7 +258,7 @@ mentionsRouter.get('/status/:agentId', async (c) => {
       counts,
       mentions: detailMentions.slice(0, limit),
       filters: {
-        roomId: roomId || undefined,
+        channelId: channelId || undefined,
         status: statusFilter || undefined,
         limit,
       },

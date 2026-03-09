@@ -63,7 +63,7 @@ describe('openclaw relay handling', () => {
       payload: {
         taskId: 'mention-1',
         agentId: 'builder',
-        roomId: 'room-alpha',
+        channelId: 'channel-alpha',
       },
     };
 
@@ -133,7 +133,7 @@ describe('openclaw relay handling', () => {
       payload: {
         taskId: 'mention-3',
         agentId: 'tester',
-        roomId: 'room-beta',
+        channelId: 'channel-beta',
         exitCode: 1,
       },
     };
@@ -173,7 +173,7 @@ describe('openclaw relay handling', () => {
       payload: {
         taskId: 'mention-4',
         agentId: 'planner',
-        roomId: 'room-gamma',
+        channelId: 'channel-gamma',
       },
     });
 
@@ -184,7 +184,7 @@ describe('openclaw relay handling', () => {
       payload: {
         taskId: 'mention-5',
         agentId: 'planner',
-        roomId: 'room-gamma',
+        channelId: 'channel-gamma',
       },
     });
 
@@ -219,7 +219,7 @@ describe('openclaw relay handling', () => {
       payload: {
         taskId: 'mention-6',
         agentId: 'observer',
-        roomId: 'room-zeta',
+        channelId: 'channel-zeta',
       },
     };
 
@@ -267,7 +267,7 @@ describe('openclaw relay handling', () => {
       payload: {
         taskId: 'mention-8',
         agentId: 'builder',
-        roomId: 'room-delta',
+        channelId: 'channel-delta',
       },
     });
 
@@ -317,7 +317,7 @@ describe('openclaw relay handling', () => {
       payload: {
         taskId: 'mention-10',
         agentId: 'reviewer',
-        roomId: 'room-epsilon',
+        channelId: 'channel-epsilon',
         exitCode: 2,
       },
     });
@@ -360,7 +360,7 @@ describe('openclaw relay handling', () => {
       payload: {
         taskId: 'mention-11',
         agentId: 'builder',
-        roomId: 'room-zeta',
+        channelId: 'channel-zeta',
       },
     });
 
@@ -371,7 +371,7 @@ describe('openclaw relay handling', () => {
       payload: {
         taskId: 'mention-12',
         agentId: 'builder',
-        roomId: 'room-zeta',
+        channelId: 'channel-zeta',
         error: 'timeout waiting for dependency',
       },
     });
@@ -411,7 +411,7 @@ describe('event summary formatting', () => {
       payload: {
         taskId: 'mention-13',
         agentId: 'critic',
-        roomId: 'room-theta',
+        channelId: 'channel-theta',
         error: 'process crashed due to syntax error',
       },
     });
@@ -419,7 +419,7 @@ describe('event summary formatting', () => {
     expect(summary).toContain('task=mention-13');
     expect(summary).toContain('agent=critic');
     expect(summary).toContain('status=failed');
-    expect(summary).toContain('room=room-theta');
+    expect(summary).toContain('channel=channel-theta');
     expect(summary).toContain('summary=process crashed due to syntax error');
   });
 

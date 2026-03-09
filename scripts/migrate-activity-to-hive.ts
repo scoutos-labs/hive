@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   db,
-  roomKey,
-  roomsListKey,
+  channelKey,
+  channelsListKey,
   postKey,
-  postsByRoomKey,
+  postsByChannelKey,
   postsByAgentKey,
   addToSet,
   generateId,
@@ -31,8 +31,8 @@ interface ActivityFile {
   last_updated?: string;
 }
 
-const ROOM_ID = 'room_tasks';
-const ROOM_NAME = 'tasks';
+const CHANNEL_ID = 'channel_tasks';
+const CHANNEL_NAME = 'tasks';
 const SYSTEM_AUTHOR = 'agent/system';
 
 function isoToMs(value?: string): number {
@@ -41,14 +41,14 @@ function isoToMs(value?: string): number {
   return Number.isFinite(ms) ? ms : Date.now();
 }
 
-async function ensureTaskRoom() {
-  const existing = await db.get(roomKey(ROOM_ID));
+async function ensureTaskChannel() {
+  const existing = await db.get(channelKey(CHANNEL_ID));
   const now = Date.now();
 
   if (!existing) {
-    await db.put(roomKey(ROOM_ID), {
-      id: ROOM_ID,
-      name: ROOM_NAME,
+    await db.put(channelKey(CHANNEL_ID), {
+      id: CHANNEL_ID,
+      name: CHANNEL_NAME,
       description: 'Canonical task lifecycle events',
       createdBy: SYSTEM_AUTHOR,
       isPrivate: false,
@@ -56,10 +56,10 @@ async function ensureTaskRoom() {
       createdAt: now,
       updatedAt: now,
     });
-    await addToSet(roomsListKey(), ROOM_ID);
-    console.log(`Created room: ${ROOM_ID}`);
+    await addToSet(channelsListKey(), CHANNEL_ID);
+    console.log(`Created channel: ${CHANNEL_ID}`);
   } else {
-    console.log(`Room already exists: ${ROOM_ID}`);
+    console.log(`Channel already exists: ${CHANNEL_ID}`);
   }
 }
 
@@ -76,7 +76,7 @@ async function createEvent(taskId: string, type: string, payload: Record<string,
 
   const post = {
     id: postId,
-    roomId: ROOM_ID,
+    channelId: CHANNEL_ID,
     authorId: SYSTEM_AUTHOR,
     content: JSON.stringify(envelope),
     createdAt: timestamp,
@@ -85,7 +85,7 @@ async function createEvent(taskId: string, type: string, payload: Record<string,
   };
 
   await db.put(postKey(postId), post);
-  await addToSet(postsByRoomKey(ROOM_ID), postId);
+  await addToSet(postsByChannelKey(CHANNEL_ID), postId);
   await addToSet(postsByAgentKey(SYSTEM_AUTHOR), postId);
 }
 
@@ -170,7 +170,7 @@ async function main() {
     throw new Error('Invalid activity.json: tasks[] missing');
   }
 
-  await ensureTaskRoom();
+  await ensureTaskChannel();
 
   let migrated = 0;
   for (const task of parsed.tasks) {
@@ -179,7 +179,7 @@ async function main() {
     migrated += 1;
   }
 
-  console.log(`Migrated ${migrated} tasks into Hive room ${ROOM_ID}`);
+  console.log(`Migrated ${migrated} tasks into Hive channel ${CHANNEL_ID}`);
   await db.close();
 }
 
