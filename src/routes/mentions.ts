@@ -3,7 +3,6 @@
  */
 
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { 
   db, 
   agentKey,
@@ -13,6 +12,15 @@ import {
   mentionsByChannelKey, 
   getList,
 } from '../db/index.js';
+import { getValidatedQuery, validateQuery } from '../middleware/validate.js';
+import {
+  listMentionsQuerySchema,
+  mentionStatusSummaryQuerySchema,
+  mentionStatusDetailQuerySchema,
+  type ListMentionsQueryInput,
+  type MentionStatusSummaryQueryInput,
+  type MentionStatusDetailQueryInput,
+} from '../schemas/mentions.js';
 import type { Mention, ApiResponse, PaginatedResponse } from '../types.js';
 
 export const mentionsRouter = new Hono();
@@ -62,23 +70,10 @@ function emptyStatusCounts(): MentionStatusCounts {
   };
 }
 
-function parseStatusFilter(value: string | undefined): MentionStatus | null {
-  if (!value) return null;
-  if (value === 'pending' || value === 'running' || value === 'completed' || value === 'failed') {
-    return value;
-  }
-  return null;
-}
-
-function isValidStatus(value: string | undefined): boolean {
-  return value === undefined || parseStatusFilter(value) !== null;
-}
-
 // GET /mentions - List mentions (filter by agentId)
-mentionsRouter.get('/', async (c) => {
-  const agentId = c.req.query('agentId');
-  const channelId = c.req.query('channelId');
-  const unreadOnly = c.req.query('unread') === 'true';
+mentionsRouter.get('/', validateQuery(listMentionsQuerySchema), async (c) => {
+  const { agentId, channelId, unread } = getValidatedQuery<ListMentionsQueryInput>(c);
+  const unreadOnly = unread;
   
   let mentionIds: string[] = [];
   
@@ -110,18 +105,8 @@ mentionsRouter.get('/', async (c) => {
 });
 
 // GET /mentions/status/summary - Task board summary grouped by agent
-mentionsRouter.get('/status/summary', async (c) => {
-  const channelId = c.req.query('channelId');
-  const statusQuery = c.req.query('status');
-
-  if (!isValidStatus(statusQuery)) {
-    return c.json<ApiResponse<never>>({
-      success: false,
-      error: 'Invalid status filter. Use pending, running, completed, or failed',
-    }, 400);
-  }
-
-  const statusFilter = parseStatusFilter(statusQuery);
+mentionsRouter.get('/status/summary', validateQuery(mentionStatusSummaryQuerySchema), async (c) => {
+  const { channelId, status: statusFilter } = getValidatedQuery<MentionStatusSummaryQueryInput>(c);
   const agentIds = await getList<string>(agentsListKey());
   const agentSummaries: AgentStatusSummary[] = [];
   const totals = emptyStatusCounts();
@@ -185,26 +170,9 @@ mentionsRouter.get('/status/summary', async (c) => {
 });
 
 // GET /mentions/status/:agentId - Detailed task board view for one agent
-mentionsRouter.get('/status/:agentId', async (c) => {
+mentionsRouter.get('/status/:agentId', validateQuery(mentionStatusDetailQuerySchema), async (c) => {
   const { agentId } = c.req.param();
-  const statusQuery = c.req.query('status');
-  const channelId = c.req.query('channelId');
-  const limitQuery = c.req.query('limit');
-
-  if (!isValidStatus(statusQuery)) {
-    return c.json<ApiResponse<never>>({
-      success: false,
-      error: 'Invalid status filter. Use pending, running, completed, or failed',
-    }, 400);
-  }
-
-  const limit = limitQuery ? Number(limitQuery) : 50;
-  if (!Number.isFinite(limit) || limit <= 0 || limit > 500) {
-    return c.json<ApiResponse<never>>({
-      success: false,
-      error: 'Invalid limit. Use a number between 1 and 500',
-    }, 400);
-  }
+  const { status: statusFilter, channelId, limit } = getValidatedQuery<MentionStatusDetailQueryInput>(c);
 
   const agent = db.get(agentKey(agentId)) as { id: string; name?: string } | undefined;
   if (!agent) {
@@ -212,7 +180,6 @@ mentionsRouter.get('/status/:agentId', async (c) => {
   }
 
   const mentionIds = await getList<string>(mentionsByAgentKey(agentId));
-  const statusFilter = parseStatusFilter(statusQuery);
   const counts = emptyStatusCounts();
   const detailMentions: AgentStatusDetailMention[] = [];
 

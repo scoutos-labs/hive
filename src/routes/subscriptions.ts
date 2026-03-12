@@ -3,7 +3,6 @@
  */
 
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { 
   db, 
   subKey, 
@@ -14,53 +13,45 @@ import {
   getList,
   removeFromSet,
 } from '../db/index.js';
+import { getValidatedBody, getValidatedQuery, validateBody, validateQuery } from '../middleware/validate.js';
+import { createSubscriptionSchema, listSubscriptionsQuerySchema, type CreateSubscriptionInput, type ListSubscriptionsQueryInput } from '../schemas/subscriptions.js';
 import type { Subscription, SubscriptionType, ApiResponse, PaginatedResponse } from '../types.js';
 
 export const subscriptionsRouter = new Hono();
 
-// Validation schemas
-const createSubscriptionSchema = z.object({
-  agentId: z.string().min(1),
-  targetType: z.enum(['channel', 'agent', 'mention']),
-  targetId: z.string().min(1),
-});
-
 // POST /subscriptions - Create a new subscription
-subscriptionsRouter.post('/', async (c) => {
-  try {
-    const body = await c.req.json();
-    const validated = createSubscriptionSchema.parse(body);
-    
-    const subId = generateId('sub');
-    const now = Date.now();
-    
-    const subscription: Subscription = {
-      id: subId,
-      agentId: validated.agentId,
-      targetType: validated.targetType as SubscriptionType,
-      targetId: validated.targetId,
-      createdAt: now,
-      active: true,
-    };
-    
-    await db.put(subKey(subId), subscription);
-    await addToSet(subsByAgentKey(validated.agentId), subId);
-    await addToSet(subsByTargetKey(validated.targetType, validated.targetId), subId);
-    
-    return c.json<ApiResponse<Subscription>>({ success: true, data: subscription }, 201);
-  } catch (error) {
-    return c.json<ApiResponse<never>>(
-      { success: false, error: error instanceof Error ? error.message : 'Unknown error' },
-      400
-    );
+subscriptionsRouter.post('/', validateBody(createSubscriptionSchema), async (c) => {
+  const validated = getValidatedBody<CreateSubscriptionInput>(c);
+
+  // Use agentId:targetId as the subscription ID for consistent lookup
+  const subId = `${validated.agentId}:${validated.targetId}`;
+  const now = Date.now();
+
+  // Check if subscription already exists
+  const existing = db.get(subKey(subId));
+  if (existing && existing.active) {
+    return c.json<ApiResponse<Subscription>>({ success: true, data: existing });
   }
+
+  const subscription: Subscription = {
+    id: subId,
+    agentId: validated.agentId,
+    targetType: validated.targetType as SubscriptionType,
+    targetId: validated.targetId,
+    createdAt: now,
+    active: true,
+  };
+
+  await db.put(subKey(subId), subscription);
+  await addToSet(subsByAgentKey(validated.agentId), subId);
+  await addToSet(subsByTargetKey(validated.targetType, validated.targetId), subId);
+
+  return c.json<ApiResponse<Subscription>>({ success: true, data: subscription }, 201);
 });
 
 // GET /subscriptions - List subscriptions (filter by agentId)
-subscriptionsRouter.get('/', async (c) => {
-  const agentId = c.req.query('agentId');
-  const targetType = c.req.query('targetType');
-  const targetId = c.req.query('targetId');
+subscriptionsRouter.get('/', validateQuery(listSubscriptionsQuerySchema), async (c) => {
+  const { agentId, targetType, targetId } = getValidatedQuery<ListSubscriptionsQueryInput>(c);
   
   let subIds: string[] = [];
   

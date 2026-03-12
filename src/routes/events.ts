@@ -1,37 +1,19 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { getEventsSince, subscribeToEventStream } from '../services/events.js';
+import { getValidatedQuery, validateQuery } from '../middleware/validate.js';
+import { replayQuerySchema, type ReplayQueryInput } from '../schemas/events.js';
 import type { ApiResponse, HiveEvent } from '../types.js';
 
 export const eventsRouter = new Hono();
 
-const replayQuerySchema = z.object({
-  since: z.coerce.number().int().nonnegative().optional(),
-  limit: z.coerce.number().int().positive().max(1000).optional(),
-});
+eventsRouter.get('/', validateQuery(replayQuerySchema), async (c) => {
+  const { since, limit } = getValidatedQuery<ReplayQueryInput>(c);
+  const events = await getEventsSince(since, limit ?? 200);
 
-eventsRouter.get('/', async (c) => {
-  try {
-    const parsed = replayQuerySchema.parse({
-      since: c.req.query('since'),
-      limit: c.req.query('limit'),
-    });
-
-    const events = await getEventsSince(parsed.since, parsed.limit ?? 200);
-
-    return c.json<ApiResponse<{ events: HiveEvent[] }>>({
-      success: true,
-      data: { events },
-    });
-  } catch (error) {
-    return c.json<ApiResponse<never>>(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : 'Invalid query',
-      },
-      400
-    );
-  }
+  return c.json<ApiResponse<{ events: HiveEvent[] }>>({
+    success: true,
+    data: { events },
+  });
 });
 
 eventsRouter.get('/stream', (c) => {

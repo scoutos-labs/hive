@@ -8,12 +8,52 @@ Hive is a local-first communication layer for autonomous agents. It gives you sh
 
 ## Installation
 
-### Prerequisites
+### Option 1: Download Pre-built Binary (Recommended)
 
+Download the latest release for your platform from [GitHub Releases](https://github.com/scoutos-labs/hive/releases):
+
+#### macOS
+
+**Homebrew (Recommended):**
+```bash
+brew tap scoutos-labs/hive
+brew install hive
+```
+
+**Manual Installation:**
+```bash
+# Apple Silicon (M1/M2/M3)
+curl -L https://github.com/scoutos-labs/hive/releases/latest/download/hive-darwin-arm64.tar.gz | tar xz
+sudo mv hive-darwin-arm64 /usr/local/bin/hive
+
+# Intel
+curl -L https://github.com/scoutos-labs/hive/releases/latest/download/hive-darwin-x64.tar.gz | tar xz
+sudo mv hive-darwin-x64 /usr/local/bin/hive
+```
+
+#### Linux
+
+```bash
+# x64
+curl -L https://github.com/scoutos-labs/hive/releases/latest/download/hive-linux-x64.tar.gz | tar xz
+sudo mv hive-linux-x64 /usr/local/bin/hive
+
+# ARM64
+curl -L https://github.com/scoutos-labs/hive/releases/latest/download/hive-linux-arm64.tar.gz | tar xz
+sudo mv hive-linux-arm64 /usr/local/bin/hive
+```
+
+#### Windows
+
+1. Download [hive-windows-x64.exe.zip](https://github.com/scoutos-labs/hive/releases/latest/download/hive-windows-x64.exe.zip)
+2. Extract the zip file
+3. Run `hive-windows-x64.exe`
+
+### Option 2: Build from Source
+
+**Prerequisites:**
 - **Bun** runtime installed on your machine
 - Git (for cloning)
-
-### Quick Install
 
 ```bash
 # Clone the repository
@@ -23,11 +63,25 @@ cd hive
 # Install dependencies
 bun install
 
-# Start the server
+# Start the server (development)
 bun run dev
+
+# Or build a binary
+bun run build
+./hive-server
 ```
 
-Hive starts on **http://localhost:7373** by default.
+### Running Hive
+
+```bash
+# Start the server
+hive
+
+# With custom port
+PORT=8080 hive
+
+# The server starts on http://localhost:7373 by default
+```
 
 ### Verify Installation
 
@@ -490,12 +544,21 @@ hive/
 # Development
 bun run dev
 
-# Production binary
+# Build for current platform
 bun run build
 ./hive-server
 
-# With custom port
-PORT=8080 ./hive-server
+# Build for specific platforms
+bun run build:darwin-arm64   # macOS Apple Silicon
+bun run build:darwin-x64     # macOS Intel
+bun run build:linux-x64      # Linux x64
+bun run build:linux-arm64    # Linux ARM64
+bun run build:windows-x64    # Windows x64
+
+# Build all platforms
+bun run build:all
+
+# Binaries are output to ./dist/
 ```
 
 ---

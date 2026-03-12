@@ -3,20 +3,13 @@
  */
 
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { db, postKey, postsByChannelKey, channelKey, channelsListKey, generateId, addToSet, removeFromSet, getList } from '../db/index.js';
+import { getValidatedBody, getValidatedQuery, validateBody, validateQuery } from '../middleware/validate.js';
+import { createPostSchema, listPostsQuerySchema as getPostsQuerySchema, postErrorsQuerySchema, type CreatePostInput, type ListPostsQueryInput, type PostErrorsQueryInput } from '../schemas/posts.js';
 import { processMentions } from '../services/spawn.js';
 import type { Post, PostCreateInput, ApiResponse, PaginatedResponse } from '../types.js';
 
 export const postsRouter = new Hono();
-
-// Validation schemas
-const createPostSchema = z.object({
-  channelId: z.string().min(1),
-  authorId: z.string().min(1),
-  content: z.string().min(1).max(10000),
-  replyTo: z.string().optional(),
-});
 
 // Helper to extract mentions from content (@agentId pattern)
 function extractMentions(content: string): string[] {
@@ -32,60 +25,49 @@ function extractMentions(content: string): string[] {
 }
 
 // POST /posts - Create a new post
-postsRouter.post('/', async (c) => {
-  try {
-    const body = await c.req.json();
-    const validated = createPostSchema.parse(body);
-    
-    // Verify channel exists
-    const channel = db.get(channelKey(validated.channelId)) as any;
-    if (!channel) {
-      return c.json<ApiResponse<never>>(
-        { success: false, error: 'Channel not found' },
-        404
-      );
-    }
-    
-    const postId = generateId('post');
-    const now = Date.now();
-    const mentions = extractMentions(validated.content);
-    
-    const post: Post = {
-      id: postId,
-      channelId: validated.channelId,
-      authorId: validated.authorId,
-      content: validated.content,
-      createdAt: now,
-      updatedAt: now,
-      replyTo: validated.replyTo,
-      mentions,
-    };
-    
-    await db.put(postKey(postId), post);
-    await addToSet(postsByChannelKey(validated.channelId), postId);
-    
-    // Process mentions (create records + spawn agents)
-    const processedMentions = await processMentions(post, channel);
-    
-    return c.json<ApiResponse<Post>>({
-      success: true,
-      data: {
-        ...post,
-        processedMentions: processedMentions.length,
-      } as any,
-    }, 201);
-  } catch (error) {
-    console.error('[posts] Error creating post:', error);
+postsRouter.post('/', validateBody(createPostSchema), async (c) => {
+  const validated = getValidatedBody<CreatePostInput>(c);
+
+  const channel = db.get(channelKey(validated.channelId)) as any;
+  if (!channel) {
     return c.json<ApiResponse<never>>(
-      { success: false, error: error instanceof Error ? error.message : 'Unknown error' },
-      400
+      { success: false, error: 'Channel not found' },
+      404
     );
   }
+
+  const postId = generateId('post');
+  const now = Date.now();
+  const mentions = extractMentions(validated.content);
+
+  const post: Post = {
+    id: postId,
+    channelId: validated.channelId,
+    authorId: validated.authorId,
+    content: validated.content,
+    createdAt: now,
+    updatedAt: now,
+    replyTo: validated.replyTo,
+    mentions,
+  };
+
+  await db.put(postKey(postId), post);
+  await addToSet(postsByChannelKey(validated.channelId), postId);
+
+  const processedMentions = await processMentions(post, channel);
+
+  return c.json<ApiResponse<Post>>({
+    success: true,
+    data: {
+      ...post,
+      processedMentions: processedMentions.length,
+    } as any,
+  }, 201);
 });
 
 // GET /posts - List posts (optionally filter by channel)
-postsRouter.get('/', async (c) => {
-  const channelId = c.req.query('channelId');
+postsRouter.get('/', validateQuery(getPostsQuerySchema), async (c) => {
+  const { channelId } = getValidatedQuery<ListPostsQueryInput>(c);
   
   if (channelId) {
     const postIds = await getList<string>(postsByChannelKey(channelId));
@@ -135,11 +117,8 @@ postsRouter.get('/', async (c) => {
 });
 
 // GET /posts/errors - Get all errors across channels
-postsRouter.get('/errors', async (c) => {
-  const sinceParam = parseInt(c.req.query('since') || '0', 10);
-  const limitParam = parseInt(c.req.query('limit') || '50', 10);
-  const since = Number.isFinite(sinceParam) && sinceParam > 0 ? sinceParam : 0;
-  const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 50;
+postsRouter.get('/errors', validateQuery(postErrorsQuerySchema), async (c) => {
+  const { since, limit } = getValidatedQuery<PostErrorsQueryInput>(c);
 
   const channelIds = await getList<string>(channelsListKey());
   const errors: Post[] = [];

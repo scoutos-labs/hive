@@ -45,13 +45,6 @@ function resolvePrincipalFromToken(
 }
 
 function getAccessRule(method: string, path: string): AccessRule | null {
-  if (path.startsWith('/proxy/elevenlabs')) {
-    return {
-      minimumRole: 'operator',
-      reason: 'ElevenLabs proxy can trigger external API usage and spend',
-    };
-  }
-
   if (path.startsWith('/webhook-subscriptions')) {
     return {
       minimumRole: 'admin',

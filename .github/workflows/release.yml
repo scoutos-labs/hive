@@ -1,0 +1,166 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos-arm64
+            target: bun-darwin-arm64
+            output: hive-darwin-arm64
+          - os: macos-latest
+            platform: macos-x64
+            target: bun-darwin-x64
+            output: hive-darwin-x64
+          - os: ubuntu-latest
+            platform: linux-x64
+            target: bun-linux-x64
+            output: hive-linux-x64
+          - os: ubuntu-latest
+            platform: linux-arm64
+            target: bun-linux-arm64
+            output: hive-linux-arm64
+          - os: windows-latest
+            platform: windows-x64
+            target: bun-windows-x64
+            output: hive-windows-x64.exe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build binary
+        run: bun build src/index.ts --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.output }}
+
+      - name: Make binary executable (Unix)
+        if: runner.os != 'Windows'
+        run: chmod +x dist/${{ matrix.output }}
+
+      - name: Create archive (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd dist
+          tar -czf ${{ matrix.output }}.tar.gz ${{ matrix.output }}
+          cd ..
+
+      - name: Create archive (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd dist
+          powershell Compress-Archive -Path ${{ matrix.output }} -DestinationPath ${{ matrix.output }}.zip
+          cd ..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: |
+            dist/${{ matrix.output }}.tar.gz
+            dist/${{ matrix.output }}.zip
+          if-no-files-found: ignore
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: ls -R artifacts
+
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "VERSION=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          name: Hive ${{ steps.get_version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+          body: |
+            ## Hive ${{ steps.get_version.outputs.VERSION }}
+            
+            Download the appropriate binary for your platform:
+            
+            ### macOS
+            - **Apple Silicon (M1/M2/M3)**: `hive-darwin-arm64.tar.gz`
+            - **Intel**: `hive-darwin-x64.tar.gz`
+            
+            ### Linux
+            - **x64**: `hive-linux-x64.tar.gz`
+            - **ARM64**: `hive-linux-arm64.tar.gz`
+            
+            ### Windows
+            - **x64**: `hive-windows-x64.exe.zip`
+            
+            ### Installation
+            
+            **macOS/Linux:**
+            ```bash
+            # Download and extract
+            tar -xzf hive-*.tar.gz
+            
+            # Move to PATH (optional)
+            sudo mv hive-* /usr/local/bin/hive
+            
+            # Run
+            hive
+            ```
+            
+            **Windows:**
+            ```powershell
+            # Extract the zip file
+            # Run hive-windows-x64.exe
+            ```
+            
+            ### Homebrew (macOS)
+            ```bash
+            brew tap scoutos-labs/hive
+            brew install hive
+            ```
+            
+            For more information, see the [README](https://github.com/scoutos-labs/hive#readme).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
