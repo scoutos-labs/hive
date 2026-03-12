@@ -131,6 +131,11 @@ async function notifyViaWebhook(
   const webhookUrl = agent.webhook.url;
 
   const payload = {
+    // OpenClaw-compatible fields
+    name: agent.id,              // Agent name for spawning
+    message: mention.content,    // Message content
+    
+    // Original Hive fields (for reference)
     mentionId: mention.id,
     agentId: agent.id,
     channelId: mention.channelId,
