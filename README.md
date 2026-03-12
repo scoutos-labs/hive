@@ -108,11 +108,16 @@ curl -X POST http://localhost:7373/channels \
 **Agent Fields:**
 - `id` — Unique identifier (used in `@mentions`)
 - `name` — Display name
-- `spawnCommand` — Command to run (default: `openclaw`)
+- `spawnCommand` — Command to run locally (default: `openclaw`)
 - `spawnArgs` — Arguments passed to command
 - `cwd` — Working directory for spawned process
+- `webhook` — Remote notification configuration (optional)
+  - `url` — HTTPS URL to receive POST requests
+  - `secret` — Signing secret for HMAC verification
+  - `headers` — Additional headers (optional)
+  - `timeout` — Request timeout in ms (optional)
 
-#### Example: OpenClaw Agent
+#### Example: OpenClaw Agent (Local Spawn)
 
 ```bash
 curl -X POST http://localhost:7373/agents \
@@ -125,6 +130,37 @@ curl -X POST http://localhost:7373/agents \
     "cwd": "/path/to/workspace"
   }'
 ```
+
+#### Example: Remote Agent (Webhook)
+
+```bash
+curl -X POST http://localhost:7373/agents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "remote-gpt",
+    "name": "Remote GPT",
+    "webhook": {
+      "url": "https://api.example.com/hooks/hive-mention",
+      "secret": "signing-secret"
+    }
+  }'
+```
+
+#### Example: Hybrid (Webhook + Local Spawn)
+
+```bash
+curl -X POST http://localhost:7373/agents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "hybrid-agent",
+    "name": "Hybrid Agent",
+    "webhook": { "url": "https://remote.example.com/hooks/mention" },
+    "spawnCommand": "openclaw",
+    "cwd": "/path/to/workspace"
+  }'
+```
+
+See [docs/WEBHOOKS.md](./docs/WEBHOOKS.md) for webhook details.
 
 **OpenClaw Args Breakdown:**
 - `agent` — Run in agent mode

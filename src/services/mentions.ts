@@ -76,11 +76,9 @@ export async function processMentions(
 }
 
 /**
- * Spawn an agent when mentioned
+ * Spawn an agent when mentioned - supports both webhook and local spawn
  */
 async function spawnAgentForMention(agent: Agent, mention: Mention): Promise<void> {
-  console.log(`[mentions] Spawning agent ${agent.id} for mention ${mention.id}`);
-
   const env = {
     ...process.env,
     MENTION_ID: mention.id,
@@ -90,8 +88,129 @@ async function spawnAgentForMention(agent: Agent, mention: Mention): Promise<voi
     FROM_AGENT: mention.fromAgentId || '',
     MENTION_CONTENT: mention.content || '',
     WORKSPACE: agent.cwd || process.cwd(),
+    // Also provide as JSON for easier parsing
+    MENTION_PAYLOAD: JSON.stringify({
+      mentionId: mention.id,
+      agentId: agent.id,
+      channelId: mention.channelId,
+      channelName: mention.channelName,
+      postId: mention.postId,
+      fromAgent: mention.fromAgentId,
+      content: mention.content,
+      timestamp: mention.createdAt,
+    }),
   };
 
+  // Fire webhook if configured
+  if (agent.webhook) {
+    await notifyViaWebhook(agent, mention, env);
+  }
+
+  // Spawn locally if spawnCommand configured
+  if (agent.spawnCommand) {
+    await spawnLocally(agent, mention, env);
+  }
+
+  // If neither configured, log warning
+  if (!agent.webhook && !agent.spawnCommand) {
+    console.warn(`[mentions] Agent ${agent.id} has no webhook or spawnCommand, mention will not be processed`);
+  }
+}
+
+/**
+ * Notify a remote agent via webhook
+ */
+async function notifyViaWebhook(
+  agent: Agent,
+  mention: Mention,
+  env: Record<string, string>
+): Promise<void> {
+  if (!agent.webhook) return;
+
+  const { url, secret, headers = {}, timeout = 30000 } = agent.webhook;
+  const webhookUrl = agent.webhook.url;
+
+  const payload = {
+    mentionId: mention.id,
+    agentId: agent.id,
+    channelId: mention.channelId,
+    channelName: mention.channelName,
+    postId: mention.postId,
+    fromAgent: mention.fromAgentId,
+    content: mention.content,
+    timestamp: mention.createdAt,
+    environment: env,
+  };
+
+  const body = JSON.stringify(payload);
+
+  // Create HMAC signature if secret provided
+  let signature: string | undefined;
+  if (secret) {
+    signature = await createHmacSignature(secret, body);
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(signature ? { 'X-Hive-Signature': signature } : {}),
+        ...headers,
+      },
+      body,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.error(`[mentions] Webhook failed for agent ${agent.id}: ${response.status} ${response.statusText}`);
+    } else {
+      console.log(`[mentions] Agent ${agent.id} notified via webhook (${response.status})`);
+    }
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error(`[mentions] Webhook error for ${agent.id}:`, errorMessage);
+  }
+}
+
+/**
+ * Create HMAC-SHA256 signature for webhook payload
+ */
+async function createHmacSignature(secret: string, body: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(secret);
+  const bodyData = encoder.encode(body);
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+
+  const signature = await crypto.subtle.sign('HMAC', key, bodyData);
+  const signatureBytes = new Uint8Array(signature);
+  const signatureHex = Array.from(signatureBytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  return `sha256=${signatureHex}`;
+}
+
+/**
+ * Spawn agent process locally (original behavior)
+ */
+async function spawnLocally(
+  agent: Agent,
+  mention: Mention,
+  env: Record<string, string>
+): Promise<void> {
   const command = agent.spawnCommand || 'openclaw';
   const rawArgs = agent.spawnArgs || ['--context', 'mention'];
 
@@ -119,7 +238,7 @@ async function spawnAgentForMention(agent: Agent, mention: Mention): Promise<voi
       console.error(`[mentions] Failed to spawn agent ${agent.id}:`, err.message);
     });
 
-    console.log(`[mentions] Spawned agent ${agent.id} (PID: ${child.pid})`);
+    console.log(`[mentions] Spawned agent ${agent.id} locally (PID: ${child.pid})`);
   } catch (err) {
     console.error(`[mentions] Spawn error for ${agent.id}:`, err);
   }

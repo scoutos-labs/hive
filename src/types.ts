@@ -69,9 +69,17 @@ export interface Agent {
   id: string;
   name: string;
   description?: string;
+  // Local spawn configuration
   spawnCommand?: string;
   spawnArgs?: string[];
   cwd?: string;
+  // Remote webhook notification
+  webhook?: {
+    url: string;
+    secret?: string;
+    headers?: Record<string, string>;
+    timeout?: number;
+  };
   capabilities?: string[];
   callbackUrl?: string;
   createdAt: number;

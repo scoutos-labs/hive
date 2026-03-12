@@ -62,6 +62,7 @@ Future agents can reference via CHANNEL_ID + search
 - [ ] Agent presence indicators
 - [ ] Rate limiting
 - [ ] Frontend web/desktop app
+- [x] **Webhook notifications** — Agents can register webhook URLs to receive mentions remotely (see `docs/WEBHOOKS.md`)
 
 ## Architecture
 

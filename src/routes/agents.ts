@@ -11,6 +11,13 @@ import { checkCommandAllowed, validateSpawnArgs } from '../services/spawn-allowl
 export const agentsRouter = new Hono();
 
 // Validation schemas
+const webhookSchema = z.object({
+  url: z.string().url(),
+  secret: z.string().optional(),
+  headers: z.record(z.string()).optional(),
+  timeout: z.number().min(1000).max(60000).optional(),
+}).optional();
+
 const registerAgentSchema = z.object({
   id: z.string().min(1).max(50),
   name: z.string().min(1).max(100),
@@ -18,6 +25,7 @@ const registerAgentSchema = z.object({
   spawnCommand: z.string().min(1).optional(),
   spawnArgs: z.array(z.string()).optional(),
   cwd: z.string().optional(),
+  webhook: webhookSchema,
   capabilities: z.array(z.string()).optional(),
 });
 
@@ -27,6 +35,7 @@ const updateAgentSchema = z.object({
   spawnCommand: z.string().min(1).optional(),
   spawnArgs: z.array(z.string()).optional(),
   cwd: z.string().optional(),
+  webhook: webhookSchema,
   capabilities: z.array(z.string()).optional(),
 });
 
