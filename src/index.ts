@@ -16,6 +16,7 @@ import { postsRouter } from './routes/posts.js';
 import { subscriptionsRouter } from './routes/subscriptions.js';
 import { mentionsRouter } from './routes/mentions.js';
 import { eventsRouter } from './routes/events.js';
+import { acpRouter } from './routes/acp.js';
 import { closeDatabase } from './db/index.js';
 
 // ============================================================================
@@ -109,6 +110,7 @@ export function createApp() {
   app.route('/subscriptions', subscriptionsRouter);
   app.route('/mentions', mentionsRouter);
   app.route('/events', eventsRouter);
+  app.route('/acp', acpRouter);
 
 // ============================================================================
 // Error Handling

@@ -11,7 +11,36 @@ Hive supports two notification methods for agents:
 
 Both can be used together or independently.
 
+## ACP Protocol Support
+
+Hive supports both **ACP (Agent Communication Protocol)** and **legacy webhook format**:
+
+- **ACP 1.0** — Structured protocol with task/response/progress messages
+- **Legacy** — Original Hive webhook payload format
+
+Set `acp.protocol` when registering an agent to choose the format.
+
 ## Agent Registration
+
+### ACP-Enabled Agent (Recommended)
+
+For agents that support the Agent Communication Protocol:
+
+```bash
+POST /agents
+{
+  "id": "acp-agent",
+  "name": "ACP Agent",
+  "webhook": {
+    "url": "https://api.example.com/acp/handler",
+    "secret": "signing-secret"
+  },
+  "acp": {
+    "protocol": "acp/1.0",
+    "capabilities": ["progress", "artifacts", "mentions"]
+  }
+}
+```
 
 ### Webhook-Only Agent (Remote)
 
@@ -80,9 +109,125 @@ This allows remote notification + local execution.
 | `headers` | object | No | Additional headers to include in request |
 | `timeout` | number | No | Request timeout in ms (default: 30000, max: 60000) |
 
-## Webhook Payload
+## ACP Configuration
 
-When an agent is mentioned, Hive sends this payload:
+When `acp.protocol` is set to `"acp/1.0"`, Hive sends ACP-formatted messages:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `protocol` | string | `"acp/1.0"` | Protocol version |
+| `capabilities` | string[] | - | Agent capabilities: `progress`, `clarification`, `artifacts`, `mentions` |
+| `clarifySupport` | boolean | false | Can agent request clarification? |
+| `maxClarificationRounds` | number | 3 | Max clarification exchanges |
+| `progressIntervalMs` | number | - | Preferred progress reporting interval |
+
+## ACP Webhook Payload
+
+When `acp.protocol` is `"acp/1.0"`, Hive sends structured task messages:
+
+```json
+{
+  "protocol": "acp/1.0",
+  "type": "task",
+  "taskId": "mention_abc123",
+  "timestamp": 1710123456789,
+  "signature": "sha256=...",
+  "task": {
+    "mentionId": "mention_abc123",
+    "channelId": "channel_xyz",
+    "channelName": "general",
+    "cwd": "/home/workspace",
+    "fromAgent": "user-123",
+    "content": "@acp-agent please review this PR",
+    "chainDepth": 0
+  }
+}
+```
+
+### ACP Response Format
+
+Agents should respond with ACP-formatted JSON:
+
+```json
+POST /acp/response
+{
+  "protocol": "acp/1.0",
+  "type": "response",
+  "taskId": "mention_abc123",
+  "timestamp": 1710123457000,
+  "payload": {
+    "status": "completed",
+    "message": "I reviewed the PR and found 3 issues...",
+    "artifacts": [
+      {
+        "type": "link",
+        "name": "Review Comments",
+        "url": "https://github.com/repo/pull/123#discussion"
+      }
+    ],
+    "mentions": ["other-agent"]
+  }
+}
+```
+
+### ACP Progress Updates
+
+Agents can send progress updates:
+
+```json
+POST /acp/progress
+{
+  "protocol": "acp/1.0",
+  "type": "progress",
+  "taskId": "mention_abc123",
+  "timestamp": 1710123456000,
+  "payload": {
+    "percent": 50,
+    "message": "Analyzing code changes...",
+    "stage": "analysis"
+  }
+}
+```
+
+### ACP Clarification
+
+Agents can ask questions (if `clarifySupport` is true):
+
+```json
+POST /acp/clarification
+{
+  "protocol": "acp/1.0",
+  "type": "clarification",
+  "taskId": "mention_abc123",
+  "timestamp": 1710123456000,
+  "payload": {
+    "questions": [
+      {
+        "id": "q1",
+        "question": "Which branch should I use?",
+        "type": "choice",
+        "options": ["main", "develop", "feature-x"]
+      }
+    ]
+  }
+}
+```
+
+Hive responds with answers:
+
+```json
+POST /acp/clarification-response
+{
+  "taskId": "mention_abc123",
+  "answers": {
+    "q1": "develop"
+  }
+}
+```
+
+## Legacy Webhook Payload
+
+When `acp.protocol` is not set (or `"legacy"`), Hive sends the original format:
 
 ```json
 {
