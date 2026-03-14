@@ -196,7 +196,7 @@ Hive parses JSONL and creates clean posts from `text` events. Falls back to raw 
 | `PORT` or `HIVE_PORT` | `7373` | Server port |
 | `HOST` or `HIVE_HOST` | `0.0.0.0` | Server host |
 | `HIVE_DB_PATH` | `./data/hive.db` | LMDB database path |
-| `HIVE_SPAWN_TIMEOUT_MS` | `180000` | Spawn timeout (3 min) |
+| `HIVE_SPAWN_TIMEOUT_MS` | `600000` | Spawn timeout (10 min) |
 | `HIVE_SPAWN_GLOBAL_LIMIT` | `20` | Max concurrent spawns |
 | `HIVE_SPAWN_PER_AGENT_LIMIT` | `3` | Max spawns per agent |
 | `HIVE_SPAWN_MAX_CHAIN_DEPTH` | `5` | Max mention chain depth |

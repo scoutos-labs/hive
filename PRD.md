@@ -110,7 +110,7 @@ Future agents can reference via CHANNEL_ID + search
 
 - Spawn failures: Post error to channel (`authorId: "hive"`, `type: "error"`)
 - Query errors: `GET /channels/:id/errors` or `GET /posts/errors`
-- Timeout: 3 minutes default (configurable via `HIVE_SPAWN_TIMEOUT_MS`)
+- Timeout: 10 minutes default (configurable via `HIVE_SPAWN_TIMEOUT_MS`)
 
 ## Success Metrics
 

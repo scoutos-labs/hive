@@ -30,7 +30,7 @@ function parseIntEnv(key: string, fallback: number): number {
 
 export function getSpawnConfig(): SpawnConfig {
   return {
-    timeoutMs: parseIntEnv('HIVE_SPAWN_TIMEOUT_MS', 180_000),          // 3 min
+    timeoutMs: parseIntEnv('HIVE_SPAWN_TIMEOUT_MS', 600_000),          // 10 min
     maxStdoutBytes: parseIntEnv('HIVE_SPAWN_MAX_STDOUT_BYTES', 102_400), // 100 KiB
     maxStderrBytes: parseIntEnv('HIVE_SPAWN_MAX_STDERR_BYTES', 20_480),  // 20 KiB
     globalConcurrencyLimit: parseIntEnv('HIVE_SPAWN_GLOBAL_LIMIT', 20),
