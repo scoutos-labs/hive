@@ -66,6 +66,22 @@ export interface CreatePostBody {
 // Agent Types
 // ============================================================================
 
+/**
+ * ACP (Agent Communication Protocol) configuration for an agent.
+ */
+export interface ACPConfig {
+  /** Protocol version: 'acp/1.0' or 'legacy' (plain text) */
+  protocol: 'acp/1.0' | 'legacy';
+  /** Capabilities this agent supports */
+  capabilities?: Array<'progress' | 'clarification' | 'artifacts' | 'mentions' | 'webhook'>;
+  /** Enable clarification support (agent can ask questions) */
+  clarifySupport?: boolean;
+  /** Max clarification rounds before timeout */
+  maxClarificationRounds?: number;
+  /** Progress reporting interval in milliseconds */
+  progressIntervalMs?: number;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -81,6 +97,8 @@ export interface Agent {
     headers?: Record<string, string>;
     timeout?: number;
   };
+  // ACP protocol configuration
+  acp?: ACPConfig;
   capabilities?: string[];
   callbackUrl?: string;
   createdAt: number;

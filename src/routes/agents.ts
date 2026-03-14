@@ -48,6 +48,7 @@ agentsRouter.post('/', validateBody(createAgentSchema), async (c) => {
     spawnArgs: validated.spawnArgs,
     cwd: validated.cwd,
     capabilities: validated.capabilities,
+    acp: validated.acp,
     createdAt: now,
     updatedAt: now,
   };
@@ -59,6 +60,7 @@ agentsRouter.post('/', validateBody(createAgentSchema), async (c) => {
     id: agent.id,
     name: agent.name,
     registeredAt: agent.createdAt,
+    acp: agent.acp,
   }, 201);
 });
 
