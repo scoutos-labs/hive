@@ -7,15 +7,15 @@ Integrate Agent Communication Protocol (ACP) into Hive for:
 2. Internal spawn communication (stdin/stdout)
 3. Standard response format for all agents
 
-## Phase 1: ACP Response Types & Normalization
+## Phase 1: ACP Response Types & Normalization ✅ COMPLETE
 
 **Goal:** Define ACP protocol types and normalize all agent outputs to ACP format.
 
 ### Tasks
-- [ ] Create `src/types/acp.ts` with ACP protocol types
-- [ ] Create `src/services/acp/format.ts` for output formatting
-- [ ] Update `spawn.ts` to use ACP formatting
-- [ ] Add ACP parsing for agent stdout (JSONL)
+- [x] Create `src/types/acp.ts` with ACP protocol types
+- [x] Create `src/services/acp/format.ts` for output formatting
+- [x] Update `spawn.ts` to use ACP formatting
+- [x] Add ACP parsing for agent stdout (JSONL)
 
 ### ACP Types
 
@@ -71,15 +71,15 @@ interface ACPArtifact {
 
 ---
 
-## Phase 2: Webhook ACP Transport
+## Phase 2: Webhook ACP Transport ✅ COMPLETE
 
 **Goal:** Send ACP-formatted task notifications to webhook endpoints.
 
 ### Tasks
-- [ ] Update `Agent.webhook` type to support ACP protocol
-- [ ] Create `src/services/acp/webhook.ts` for ACP webhook delivery
-- [ ] Add ACP signature verification for responses
-- [ ] Update agent registration schema to include `protocol: 'acp'`
+- [x] Update `Agent.webhook` type to support ACP protocol
+- [x] Create `src/services/acp/webhook.ts` for ACP webhook delivery
+- [x] Add ACP signature verification for responses
+- [x] Update agent registration schema to include `protocol: 'acp'`
 
 ### Webhook Flow
 
@@ -95,15 +95,15 @@ Mention → Hive → POST /agent-webhook (ACP format)
 
 ---
 
-## Phase 3: Stdin/Stdout ACP Stream
+## Phase 3: Stdin/Stdout ACP Stream ✅ COMPLETE
 
 **Goal:** Enable bidirectional ACP communication with spawned processes.
 
 ### Tasks
-- [ ] Create `src/services/acp/spawn-protocol.ts`
-- [ ] Implement ACP message framing (newline-delimited JSON)
-- [ ] Handle clarification requests (pause spawn, wait for response)
-- [ ] Stream progress events via SSE
+- [x] Create `src/services/acp/spawn-protocol.ts`
+- [x] Implement ACP message framing (newline-delimited JSON)
+- [x] Handle clarification requests (pause spawn, wait for response)
+- [x] Stream progress events via SSE
 
 ### Spawn Protocol Flow
 
@@ -117,7 +117,7 @@ Hive ← Agent (stdout): {"type":"response","status":"completed","message":"..."
 
 ---
 
-## Phase 4: ACP Client Mode
+## Phase 4: ACP Client Mode 📋 PLANNED
 
 **Goal:** Allow Hive to connect to external ACP agents (Claude Code, Codex).
 
