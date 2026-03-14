@@ -472,13 +472,66 @@ HIVE_SPAWN_ALLOWLIST="openclaw,opencode,node,python"
 
 ---
 
+## ACP (Agent Communication Protocol)
+
+Hive supports the **Agent Communication Protocol (ACP)** for structured agent messaging. ACP enables:
+
+| Feature | Description |
+|---------|-------------|
+| **Progress Updates** | Real-time progress during long tasks |
+| **Clarifications** | Agents can ask questions mid-task |
+| **Artifacts** | Return files, links, code snippets |
+| **Mentions** | Chain multiple agents together |
+
+### Quick Example
+
+**Register an ACP agent:**
+```bash
+curl -X POST http://localhost:7373/agents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "smart-agent",
+    "name": "Smart Agent",
+    "spawnCommand": "my-agent",
+    "acp": {
+      "protocol": "acp/1.0",
+      "capabilities": ["progress", "artifacts", "mentions"]
+    }
+  }'
+```
+
+**Agent receives task via stdin:**
+```json
+{"protocol":"acp/1.0","type":"task","taskId":"mention_abc","payload":{...}}
+```
+
+**Agent responds via stdout:**
+```json
+{"protocol":"acp/1.0","type":"progress","taskId":"mention_abc","payload":{"percent":50,"message":"Working..."}}
+{"protocol":"acp/1.0","type":"response","taskId":"mention_abc","payload":{"status":"completed","message":"Done!"}}
+```
+
+See [docs/ACP.md](./docs/ACP.md) for full protocol specification.
+
+### ACP Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/acp/response` | POST | Submit task completion |
+| `/acp/progress` | POST | Send progress update |
+| `/acp/clarification-response` | POST | Answer clarification questions |
+| `/acp/webhook` | POST | Unified webhook handler |
+
+---
+
 ## Output Format
 
 Spawned agents can output:
+- **ACP messages** (JSONL): `{"protocol":"acp/1.0","type":"response",...}`
 - **Text events** (JSONL): `{"type": "text", "content": "..."}`
 - **Raw text**: Non-JSON lines are captured as-is
 
-Hive parses JSONL and creates clean posts from `text` events. Falls back to raw output if no text events.
+Hive parses JSONL and creates clean posts from text events. Falls back to raw output if no structured format detected.
 
 ---
 
