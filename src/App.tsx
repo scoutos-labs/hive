@@ -9,14 +9,12 @@ function MentionAutocomplete({
   query,
   agents,
   position,
-  onSelect,
-  onClose
+  onSelect
 }: {
   query: string;
   agents: { id: string; name: string }[];
   position: { top: number; left: number };
   onSelect: (agentId: string) => void;
-  onClose: () => void;
 }) {
   const filtered = useMemo(() => {
     if (!query) return agents;
@@ -207,7 +205,7 @@ function Sidebar({
 
 // Main content area
 function Main({ channelId, onTaskUpdate }: { channelId: string | null; onTaskUpdate: () => void }) {
-  const { channel, channels, posts, loading, refetchPosts } = useChannel(channelId);
+  const { channel, posts, loading, refetchPosts } = useChannel(channelId);
   const { events, connected } = useSSE('/api/events/stream');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -220,15 +218,16 @@ function Main({ channelId, onTaskUpdate }: { channelId: string | null; onTaskUpd
   useEffect(() => {
     if (events.length > 0) {
       const lastEvent = events[events.length - 1];
-      if (lastEvent.type === 'task.completed') {
+      if (lastEvent.type === 'post.created' && lastEvent.payload?.post?.channelId === channelId) {
         refetchPosts();
+      }
+      if (lastEvent.type === 'task.completed') {
         onTaskUpdate();
         const agentId = lastEvent.payload?.agentId || 'agent';
         const channelName = channel?.name || 'unknown';
         notifyAgentComplete(agentId, channelName);
       }
       if (lastEvent.type === 'task.failed') {
-        refetchPosts();
         onTaskUpdate();
         const agentId = lastEvent.payload?.agentId || 'agent';
         const channelName = channel?.name || 'unknown';
@@ -238,8 +237,11 @@ function Main({ channelId, onTaskUpdate }: { channelId: string | null; onTaskUpd
       if (lastEvent.type === 'task.started') {
         onTaskUpdate();
       }
+      if (lastEvent.type === 'mention.spawn_status_changed') {
+        onTaskUpdate();
+      }
     }
-  }, [events, refetchPosts, onTaskUpdate, channel]);
+  }, [events, refetchPosts, onTaskUpdate, channel, channelId]);
 
   return (
     <div className="main">
@@ -439,7 +441,6 @@ function Composer({ channelId, onSend }: { channelId: string; onSend: () => void
           agents={agents}
           position={mentionPosition}
           onSelect={handleMentionSelect}
-          onClose={() => setMentionQuery(null)}
         />
       )}
     </div>

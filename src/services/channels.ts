@@ -17,6 +17,7 @@ import {
   getList 
 } from '../db/index.js';
 import type { Channel, Post, CreateChannelBody, CreatePostBody, Subscription } from '../types.js';
+import { emitHiveEvent } from './events.js';
 
 // ============================================================================
 // Channel Operations
@@ -89,13 +90,14 @@ export async function deleteChannel(id: string): Promise<boolean> {
 
 export async function createPost(channelId: string, data: CreatePostBody): Promise<Post> {
   const id = generateId('post');
+  const now = Date.now();
 
   // Extract mentions from content (@agentId)
   const mentionRegex = /@(\w[\w-]*)/g;
-  const mentions: string[] = [];
+  const mentions = new Set<string>();
   let match;
   while ((match = mentionRegex.exec(data.content)) !== null) {
-    mentions.push(match[1]);
+    mentions.add(match[1]);
   }
 
   const post: Post = {
@@ -103,12 +105,22 @@ export async function createPost(channelId: string, data: CreatePostBody): Promi
     channelId,
     authorId: data.authorId,
     content: data.content,
-    mentions,
-    createdAt: Date.now(),
+    mentions: Array.from(mentions),
+    createdAt: now,
+    updatedAt: now,
+    ...(data.replyTo ? { replyTo: data.replyTo } : {}),
   };
 
   await db.put(postKey(id), post);
   await addToSet(postsByChannelKey(channelId), id);
+
+  await emitHiveEvent(
+    'post.created',
+    {
+      post,
+    },
+    'channels:createPost'
+  );
 
   return post;
 }

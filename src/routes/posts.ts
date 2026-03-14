@@ -3,32 +3,20 @@
  */
 
 import { Hono } from 'hono';
-import { db, postKey, postsByChannelKey, channelKey, channelsListKey, generateId, addToSet, removeFromSet, getList } from '../db/index.js';
+import { db, postKey, postsByChannelKey, channelsListKey, removeFromSet, getList } from '../db/index.js';
 import { getValidatedBody, getValidatedQuery, validateBody, validateQuery } from '../middleware/validate.js';
 import { createPostSchema, listPostsQuerySchema as getPostsQuerySchema, postErrorsQuerySchema, type CreatePostInput, type ListPostsQueryInput, type PostErrorsQueryInput } from '../schemas/posts.js';
 import { processMentions } from '../services/spawn.js';
-import type { Post, PostCreateInput, ApiResponse, PaginatedResponse } from '../types.js';
+import { createPost, getChannel } from '../services/channels.js';
+import type { Post, ApiResponse, PaginatedResponse } from '../types.js';
 
 export const postsRouter = new Hono();
-
-// Helper to extract mentions from content (@agentId pattern)
-function extractMentions(content: string): string[] {
-  const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
-  const mentions: string[] = [];
-  let match;
-  
-  while ((match = mentionRegex.exec(content)) !== null) {
-    mentions.push(match[1]);
-  }
-  
-  return [...new Set(mentions)]; // unique mentions
-}
 
 // POST /posts - Create a new post
 postsRouter.post('/', validateBody(createPostSchema), async (c) => {
   const validated = getValidatedBody<CreatePostInput>(c);
 
-  const channel = db.get(channelKey(validated.channelId)) as any;
+  const channel = await getChannel(validated.channelId);
   if (!channel) {
     return c.json<ApiResponse<never>>(
       { success: false, error: 'Channel not found' },
@@ -36,23 +24,11 @@ postsRouter.post('/', validateBody(createPostSchema), async (c) => {
     );
   }
 
-  const postId = generateId('post');
-  const now = Date.now();
-  const mentions = extractMentions(validated.content);
-
-  const post: Post = {
-    id: postId,
-    channelId: validated.channelId,
+  const post = await createPost(validated.channelId, {
     authorId: validated.authorId,
     content: validated.content,
-    createdAt: now,
-    updatedAt: now,
-    replyTo: validated.replyTo,
-    mentions,
-  };
-
-  await db.put(postKey(postId), post);
-  await addToSet(postsByChannelKey(validated.channelId), postId);
+    ...(validated.replyTo ? { replyTo: validated.replyTo } : {}),
+  });
 
   const processedMentions = await processMentions(post, channel);
 

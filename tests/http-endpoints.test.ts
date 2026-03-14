@@ -561,6 +561,7 @@ describe('notifications MVP', () => {
     expect(replay.response.status).toBe(200);
 
     const types = replay.body.data.events.map((event: any) => event.type);
+    expect(types.includes('post.created')).toBe(true);
     expect(types.includes('mention.spawn_status_changed')).toBe(true);
     expect(types.includes('task.started')).toBe(true);
     expect(types.includes('task.completed') || types.includes('task.failed')).toBe(true);
@@ -677,11 +678,12 @@ describe('notifications MVP', () => {
       if (next.done) break;
       buffered += decoder.decode(next.value, { stream: true });
 
-      if (buffered.includes('event: mention.spawn_status_changed')) {
+      if (buffered.includes('event: post.created') && buffered.includes('event: mention.spawn_status_changed')) {
         break;
       }
     }
 
+    expect(buffered.includes('event: post.created')).toBe(true);
     expect(buffered.includes('event: mention.spawn_status_changed')).toBe(true);
 
     controller.abort();

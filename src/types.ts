@@ -59,6 +59,7 @@ export interface PostCreateInput {
 export interface CreatePostBody {
   authorId: string;
   content: string;
+  replyTo?: string;
 }
 
 // ============================================================================
@@ -161,6 +162,7 @@ export interface Mention {
 // ============================================================================
 
 export type HiveEventType =
+  | 'post.created'
   | 'task.started'
   | 'task.progress'
   | 'task.completed'

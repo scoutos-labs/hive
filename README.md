@@ -400,11 +400,14 @@ curl -X PUT http://localhost:7373/channels/channel_abc123 \
 | `GET` | `/events?since=...&limit=...` | Event replay |
 
 **Event Types:**
+- `post.created`
 - `task.started`
 - `task.progress`
 - `task.completed`
 - `task.failed`
 - `mention.spawn_status_changed`
+
+`post.created` is emitted for every durable channel post, including user messages, agent response posts, and Hive-generated error posts.
 
 **SSE Client:**
 ```javascript

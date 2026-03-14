@@ -16,9 +16,7 @@ import {
   mentionKey, 
   mentionsByAgentKey,
   mentionsByChannelKey,
-  postKey,
-  postsByChannelKey,
-  generateId, 
+  generateId,
   addToSet, 
   getList 
 } from '../db/index.js';
@@ -65,33 +63,13 @@ async function createAgentResponsePost(
   replyToPostId?: string,
   chainDepth: number = 0
 ): Promise<Post> {
-  // Create post directly in database
-  const postId = generateId('post');
-  
-  // Extract mentions from output. This intentionally mirrors user mention
-  // parsing so agent-to-agent chains use the same routing rules.
-  const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
-  const mentions: string[] = [];
-  let match;
-  while ((match = mentionRegex.exec(output)) !== null) {
-    mentions.push(match[1]);
-  }
-  
-  const post: Post = {
-    id: postId,
-    channelId: channel.id,
+  const post = await createPost(channel.id, {
     authorId,
     content: output.trim(),
-    mentions,
-    createdAt: Date.now(),
-    replyTo: replyToPostId,
-  };
+    ...(replyToPostId ? { replyTo: replyToPostId } : {}),
+  });
   
-  // Store post
-  await db.put(postKey(postId), post);
-  await addToSet(postsByChannelKey(channel.id), postId);
-  
-  console.log(`[spawn] Created agent response post ${postId} with mentions: ${mentions.join(', ')} (chain depth ${chainDepth})`);
+  console.log(`[spawn] Created agent response post ${post.id} with mentions: ${post.mentions.join(', ')} (chain depth ${chainDepth})`);
   
   // Process mentions in this post (triggers spawn chain)
   await processMentions(post, channel, chainDepth);

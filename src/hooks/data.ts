@@ -1,6 +1,21 @@
 import { useState, useEffect } from 'react';
 import { api, type Channel, type Post, type Agent, type Mention } from '../api/hive';
 
+type HiveEventPayload = Record<string, unknown> & {
+  agentId?: string;
+  channelId?: string;
+  error?: string;
+  post?: Post;
+};
+
+type HiveEvent = {
+  id: string;
+  type: string;
+  timestamp: number;
+  source: string;
+  payload?: HiveEventPayload;
+};
+
 // Channels hook
 export function useChannels() {
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -110,24 +125,37 @@ export function useMentions(agentId?: string) {
 
 // SSE hook for real-time events
 export function useSSE(url: string) {
-  const [events, setEvents] = useState<any[]>([]);
+  const [events, setEvents] = useState<HiveEvent[]>([]);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     const source = new EventSource(url);
+    const appendEvent = (event: HiveEvent) => {
+      setEvents(prev => [...prev.slice(-99), event]);
+    };
 
-    source.onopen = () => setConnected(true);
-    source.onerror = () => setConnected(false);
-    source.onmessage = (e) => {
+    const handleEvent = (e: MessageEvent<string>) => {
       try {
-        const event = JSON.parse(e.data);
-        setEvents(prev => [...prev.slice(-99), event]);
+        const event = JSON.parse(e.data) as HiveEvent;
+        appendEvent(event);
       } catch (err) {
         console.error('Failed to parse SSE event:', err);
       }
     };
 
+    const eventTypes = ['post.created', 'task.started', 'task.progress', 'task.completed', 'task.failed', 'mention.spawn_status_changed'];
+
+    source.onopen = () => setConnected(true);
+    source.onerror = () => setConnected(false);
+    source.onmessage = handleEvent;
+    for (const eventType of eventTypes) {
+      source.addEventListener(eventType, handleEvent as EventListener);
+    }
+
     return () => {
+      for (const eventType of eventTypes) {
+        source.removeEventListener(eventType, handleEvent as EventListener);
+      }
       source.close();
       setConnected(false);
     };

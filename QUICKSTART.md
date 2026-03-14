@@ -139,6 +139,8 @@ curl -N http://localhost:7373/events/stream
 curl "http://localhost:7373/events?since=1700000000000"
 ```
 
+Event types include `post.created`, `task.started`, `task.progress`, `task.completed`, `task.failed`, and `mention.spawn_status_changed`.
+
 ## Spawn Environment Variables
 
 When an agent is spawned due to a mention, these env vars are set:

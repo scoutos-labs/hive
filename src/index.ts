@@ -74,7 +74,7 @@ export function createApp() {
           update: { method: 'PUT', path: '/mentions/:id/status', description: 'Update mention status', body: { status: 'pending|running|completed|failed', error: 'string?' } },
         },
         events: {
-          stream: { method: 'GET', path: '/events/stream', description: 'SSE stream for real-time events', events: ['task.started', 'task.progress', 'task.completed', 'task.failed', 'mention.spawn_status_changed'] },
+          stream: { method: 'GET', path: '/events/stream', description: 'SSE stream for real-time events', events: ['post.created', 'task.started', 'task.progress', 'task.completed', 'task.failed', 'mention.spawn_status_changed'] },
         },
       },
       quickstart: [
