@@ -33,6 +33,20 @@ import { db, agentKey, mentionKey } from '../../db/index.js';
 import { createPost } from '../channels.js';
 
 // ============================================================================
+// Logging Helper
+// ============================================================================
+
+const log = {
+  info: (msg: string, ...args: unknown[]) => console.log(`[acp-spawn] ${msg}`, ...args),
+  error: (msg: string, ...args: unknown[]) => console.error(`[acp-spawn] ${msg}`, ...args),
+  debug: (msg: string, ...args: unknown[]) => {
+    if (process.env.ACP_DEBUG === 'true' || process.env.DEBUG === 'true') {
+      console.log(`[acp-spawn:debug] ${msg}`, ...args);
+    }
+  },
+};
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -314,13 +328,13 @@ export async function spawnAgentACP(
     child.stderr?.on('data', (data: Buffer) => {
       const chunk = data.toString();
       stderrBuf += chunk;
-      console.error(`[acp-spawn:${agent.id}:err] ${chunk.slice(0, 200)}`);
+      log.error(`stderr: ${chunk.slice(0, 200)}${chunk.length > 200 ? '...' : ''}`);
     });
 
     // Timeout
     const timeoutHandle = setTimeout(() => {
       if (child.killed) return;
-      console.warn(`[acp-spawn] Agent ${agent.id} timed out after ${cfg.timeoutMs}ms`);
+      log.error(`Agent ${agent.id} timed out after ${cfg.timeoutMs}ms`);
       child.kill('SIGKILL');
       activeSpawns.delete(mention.id);
       resolve({
@@ -335,8 +349,8 @@ export async function spawnAgentACP(
     child.on('close', async (code) => {
       clearTimeout(timeoutHandle);
       activeSpawns.delete(mention.id);
-
-      const success = code === 0 && !stderrBuf;
+      log.info(`Agent ${agent.id} closed with exit code ${code}`);
+      log.debug(`stdout length: ${stdoutBuf.length}, stderr length: ${stderrBuf.length}`);
 
       // Parse final output
       const parsedOutput = parseAgentOutput(stdoutBuf, mention.id);

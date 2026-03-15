@@ -1,47 +1,59 @@
 {
-  "name": "hive",
+  "name": "@scoutos-labs/hive",
   "version": "0.1.0",
-  "description": "Agent-to-agent communication platform with web UI",
+  "description": "Agent-to-agent communication platform with ACP protocol",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
     "dev": "bun run --hot src/index.ts",
-    "start": "bun run src/index.ts",
-    "relay:openclaw": "bun run scripts/hive-openclaw-relay.ts",
-    "test": "bun test",
-    "build": "bun build src/index.ts --compile --outfile hive-server",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build:darwin-arm64": "bun build src/index.ts --compile --target darwin-arm64 --outfile dist/hive-darwin-arm64",
+    "build:darwin-x64": "bun build src/index.ts --compile --target darwin-x64 --outfile dist/hive-darwin-x64",
+    "build:linux-x64": "bun build src/index.ts --compile --target linux-x64 --outfile dist/hive-linux-x64",
+    "build:linux-arm64": "bun build src/index.ts --compile --target linux-arm64 --outfile dist/hive-linux-arm64",
+    "build:windows-x64": "bun build src/index.ts --compile --target windows-x64 --outfile dist/hive-windows-x64.exe",
     "build:all": "bun run build:darwin-arm64 && bun run build:darwin-x64 && bun run build:linux-x64 && bun run build:linux-arm64 && bun run build:windows-x64",
-    "build:darwin-arm64": "bun build src/index.ts --compile --target=bun-darwin-arm64 --outfile dist/hive-darwin-arm64",
-    "build:darwin-x64": "bun build src/index.ts --compile --target=bun-darwin-x64 --outfile dist/hive-darwin-x64",
-    "build:macos-arm64": "bun run build:darwin-arm64",
-    "build:macos-x64": "bun run build:darwin-x64",
-    "build:linux-x64": "bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/hive-linux-x64",
-    "build:linux-arm64": "bun build src/index.ts --compile --target=bun-linux-arm64 --outfile dist/hive-linux-arm64",
-    "build:windows-x64": "bun build src/index.ts --compile --target=bun-windows-x64 --outfile dist/hive-windows-x64.exe",
     "typecheck": "tsc --noEmit",
-    "tasks:migrate": "bun run scripts/migrate-activity-to-hive.ts",
-    "web:dev": "vite",
-    "web:build": "vite build",
-    "web:preview": "vite preview",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "lint": "eslint src/",
+    "test": "bun test",
+    "start": "bun run dist/index.js"
   },
+  "keywords": [
+    "agents",
+    "ai",
+    "communication",
+    "acp",
+    "protocol",
+    "orchestration"
+  ],
+  "author": "ScoutOS Labs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/scoutos-labs/hive.git"
+  },
+  "bugs": {
+    "url": "https://github.com/scoutos-labs/hive/issues"
+  },
+  "homepage": "https://github.com/scoutos-labs/hive",
   "dependencies": {
-    "@tauri-apps/plugin-notification": "^2",
-    "hono": "^4.7.0",
-    "lmdb": "^3.1.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "zod": "^4.3.6"
+    "hono": "^4.6.14",
+    "lmdb": "^3.2.0"
   },
   "devDependencies": {
-    "@tauri-apps/api": "^2.10.1",
-    "@tauri-apps/cli": "^2.10.1",
-    "@types/bun": "latest",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "typescript": "^5.7.0",
-    "vite": "^5.4.2"
-  }
+    "@types/bun": "^1.1.14",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "bin": {
+    "hive": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
 }

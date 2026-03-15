@@ -20,6 +20,17 @@ import { formatAgentOutputForPost, parseACPLine } from '../services/acp/format.j
 import type { ApiResponse } from '../types.js';
 import type { ACPResponsePayload, ACPProgressPayload } from '../types/acp.js';
 
+// Logging helper
+const log = {
+  info: (msg: string, ...args: unknown[]) => console.log(`[acp-route] ${msg}`, ...args),
+  error: (msg: string, ...args: unknown[]) => console.error(`[acp-route] ${msg}`, ...args),
+  debug: (msg: string, ...args: unknown[]) => {
+    if (process.env.ACP_DEBUG === 'true' || process.env.DEBUG === 'true') {
+      console.log(`[acp-route:debug] ${msg}`, ...args);
+    }
+  },
+};
+
 export const acpRouter = new Hono();
 
 // ============================================================================
@@ -33,19 +44,24 @@ export const acpRouter = new Hono();
  * Body: ACPResponseMessage JSON
  */
 acpRouter.post('/response', async (c) => {
+  log.info('POST /acp/response - Received ACP response');
   const body = await c.req.json().catch(() => null);
 
   if (!body) {
+    log.error('Invalid JSON body');
     return c.json<ApiResponse>(
       { success: false, error: 'Invalid JSON body' },
       400
     );
   }
 
+  log.debug('Response body:', JSON.stringify(body).slice(0, 500));
+
   // Validate ACP message structure
   const parseResult = parseACPResponseMessage(JSON.stringify(body));
 
   if (!parseResult.success || !parseResult.message) {
+    log.error(`Invalid ACP response: ${parseResult.error}`);
     return c.json<ApiResponse>(
       { success: false, error: parseResult.error || 'Invalid ACP response' },
       400
@@ -54,10 +70,12 @@ acpRouter.post('/response', async (c) => {
 
   const message = parseResult.message;
   const payload = message.payload as ACPResponsePayload;
+  log.info(`Valid ACP response for task ${message.taskId}, status: ${payload.status}`);
 
   // Validate response payload
   const validation = validateACPResponse(payload);
   if (!validation.valid) {
+    log.error(`Invalid response payload: ${validation.errors.join(', ')}`);
     return c.json<ApiResponse>(
       { success: false, error: `Invalid response payload: ${validation.errors.join(', ')}` },
       400
@@ -69,15 +87,19 @@ acpRouter.post('/response', async (c) => {
   const mention = await db.get(mentionKey(mentionId));
 
   if (!mention) {
+    log.error(`Mention not found: ${mentionId}`);
     return c.json<ApiResponse>(
       { success: false, error: `Mention not found: ${mentionId}` },
       404
     );
   }
 
+  log.info(`Found mention ${mentionId} for agent ${mention.agentId}`);
+
   // Get channel
   const channel = await db.get(channelKey(mention.channelId));
   if (!channel) {
+    log.error(`Channel not found: ${mention.channelId}`);
     return c.json<ApiResponse>(
       { success: false, error: `Channel not found: ${mention.channelId}` },
       404
@@ -87,6 +109,8 @@ acpRouter.post('/response', async (c) => {
   // Update mention status
   const status = payload.status === 'completed' ? 'completed' :
                   payload.status === 'failed' ? 'failed' : 'completed';
+
+  log.info(`Updating mention ${mentionId} status to ${status}`);
 
   mention.spawnStatus = status;
   mention.spawnOutput = payload.message;
@@ -111,6 +135,9 @@ acpRouter.post('/response', async (c) => {
     finalResponse: payload,
   });
 
+  log.info(`Creating response post ${postId} for channel ${channel.id}`);
+  log.debug(`Post content: ${postContent.slice(0, 200)}...`);
+
   const post = {
     id: postId,
     channelId: channel.id,
@@ -121,6 +148,7 @@ acpRouter.post('/response', async (c) => {
   };
 
   await db.put(postKey(postId), post);
+  log.info(`Post ${postId} created successfully`);
 
   // Emit event
   await emitHiveEvent(
@@ -136,6 +164,8 @@ acpRouter.post('/response', async (c) => {
     },
     'acp:response'
   );
+
+  log.info(`ACP response processed successfully for task ${mentionId}`);
 
   return c.json({
     success: true,
