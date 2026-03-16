@@ -21,23 +21,40 @@ eventsRouter.get('/stream', (c) => {
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
+      // Send initial keepalive to establish the connection immediately
+      controller.enqueue(encoder.encode(': connected\n\n'));
+
       const send = (event: HiveEvent) => {
-        controller.enqueue(
-          encoder.encode(
-            `id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
-          )
-        );
+        try {
+          controller.enqueue(
+            encoder.encode(
+              `id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
+            )
+          );
+        } catch {
+          // Controller may be closed
+        }
       };
 
       const unsubscribe = subscribeToEventStream(send);
       const keepAlive = setInterval(() => {
-        controller.enqueue(encoder.encode(': keepalive\n\n'));
+        try {
+          controller.enqueue(encoder.encode(': keepalive\n\n'));
+        } catch {
+          // Controller closed, stop trying
+          clearInterval(keepAlive);
+          unsubscribe();
+        }
       }, 15000);
 
       c.req.raw.signal.addEventListener('abort', () => {
         clearInterval(keepAlive);
         unsubscribe();
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // Already closed
+        }
       });
     },
   });
