@@ -59,7 +59,7 @@ describe('Persistence', () => {
       expect(readBack.createdBy).toBe('test-runner');
       
       // Verify it's in the list
-      const channelList = await getList<string>(channelsListKey());
+      const channelList = getList<string>(channelsListKey());
       expect(channelList).toContain(createdChannelId);
       
       // Force sync to disk (LMDB does this automatically, but we can verify)
@@ -97,7 +97,7 @@ describe('Persistence', () => {
       expect(channelInDb.id).toBe(createdId);
       
       // Verify it's in the channels list
-      const channelList = await getList<string>('channels!list');
+      const channelList = getList<string>('channels!list');
       expect(channelList).toContain(createdId);
     });
   });
@@ -129,7 +129,7 @@ describe('Persistence', () => {
       expect(readBack.spawnCommand).toBe('echo');
       
       // Verify it's in the list
-      const agentList = await getList<string>(agentsListKey());
+      const agentList = getList<string>(agentsListKey());
       expect(agentList).toContain(createdAgentId);
       
       // Verify data is still accessible after sync
@@ -163,7 +163,7 @@ describe('Persistence', () => {
       expect(agentInDb.id).toBe(agentId);
       
       // Verify it's in the agents list
-      const agentList = await getList<string>('agents!list');
+      const agentList = getList<string>('agents!list');
       expect(agentList).toContain(agentId);
     });
   });
@@ -212,7 +212,7 @@ describe('Persistence', () => {
       await Promise.all(promises);
       
       // Verify all channels were added
-      const list = await getList<string>('channels!list');
+      const list = getList<string>('channels!list');
       const concurrentChannels = list.filter(id => id.startsWith('channel_concurrent_'));
       expect(concurrentChannels.length).toBe(10);
     });
@@ -239,7 +239,7 @@ describe('Persistence', () => {
       await Promise.all(promises);
       
       // Verify all agents were added
-      const list = await getList<string>('agents!list');
+      const list = getList<string>('agents!list');
       const concurrentAgents = list.filter(id => id.startsWith('agent_concurrent_'));
       expect(concurrentAgents.length).toBe(10);
     });

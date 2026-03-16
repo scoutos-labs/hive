@@ -116,7 +116,7 @@ export const generateId = (prefix: string): string => {
 export async function addToSet<T>(key: string, value: T): Promise<void> {
   // Use LMDB's atomic transaction to prevent race conditions
   await db.transaction(async () => {
-    const existing = await db.get(key);
+    const existing = db.get(key); // Note: db.get() is synchronous in lmdb
     if (existing) {
       if (!existing.includes(value)) {
         await db.put(key, [...existing, value]);
@@ -134,7 +134,7 @@ export async function addToSet<T>(key: string, value: T): Promise<void> {
  */
 export async function removeFromSet<T>(key: string, value: T): Promise<void> {
   await db.transaction(async () => {
-    const existing = await db.get(key);
+    const existing = db.get(key); // Note: db.get() is synchronous in lmdb
     if (existing) {
       const filtered = existing.filter((v: T) => v !== value);
       await db.put(key, filtered);
@@ -142,9 +142,8 @@ export async function removeFromSet<T>(key: string, value: T): Promise<void> {
   });
 }
 
-export async function getList<T>(key: string): Promise<T[]> {
-  const result = await db.get(key);
-  return result || [];
+export function getList<T>(key: string): T[] {
+  return db.get(key) || [];
 }
 
 // ============================================================================
