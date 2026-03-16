@@ -107,28 +107,43 @@ export const generateId = (prefix: string): string => {
 // Database Helpers
 // ============================================================================
 
+/**
+ * Atomically add a value to a set (list with unique values).
+ * 
+ * Uses LMDB's binary-unsafe compare-and-swap pattern to prevent race conditions
+ * when multiple concurrent calls modify the same key.
+ */
 export async function addToSet<T>(key: string, value: T): Promise<void> {
-  const existing = await db.get(key);
-  if (existing) {
-    if (!existing.includes(value)) {
-      await db.put(key, [...existing, value]);
+  // Use LMDB's atomic transaction to prevent race conditions
+  await db.transaction(async () => {
+    const existing = db.get(key); // Note: db.get() is synchronous in lmdb
+    if (existing) {
+      if (!existing.includes(value)) {
+        await db.put(key, [...existing, value]);
+      }
+    } else {
+      await db.put(key, [value]);
     }
-  } else {
-    await db.put(key, [value]);
-  }
+  });
 }
 
+/**
+ * Atomically remove a value from a set.
+ * 
+ * Uses LMDB's atomic transaction to prevent race conditions.
+ */
 export async function removeFromSet<T>(key: string, value: T): Promise<void> {
-  const existing = await db.get(key);
-  if (existing) {
-    const filtered = existing.filter((v: T) => v !== value);
-    await db.put(key, filtered);
-  }
+  await db.transaction(async () => {
+    const existing = db.get(key); // Note: db.get() is synchronous in lmdb
+    if (existing) {
+      const filtered = existing.filter((v: T) => v !== value);
+      await db.put(key, filtered);
+    }
+  });
 }
 
-export async function getList<T>(key: string): Promise<T[]> {
-  const result = await db.get(key);
-  return result || [];
+export function getList<T>(key: string): T[] {
+  return db.get(key) || [];
 }
 
 // ============================================================================
