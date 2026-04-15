@@ -599,6 +599,9 @@ npm install -g @scoutos-labs/hive
 bun install -g @scoutos-labs/hive
 ```
 
+Use npm as the primary install path in user-facing docs. Keep Bun as an
+optional global install/runtime path.
+
 ## Verify Installation
 
 ```bash
@@ -650,12 +653,15 @@ bun run scripts/bump-version.ts patch  # 0.1.0 → 0.1.1
 bun run scripts/bump-version.ts minor  # 0.1.0 → 0.2.0
 bun run scripts/bump-version.ts major  # 0.1.0 → 1.0.0
 
-# Build all platforms
-bun run build:all
+# Build Node distribution
+npm run build:node
 
-# Build specific platform
-bun run build:darwin-arm64
-bun run build:linux-x64
+# Build all Bun-native binaries
+bun run build:bun:all
+
+# Build specific Bun-native platforms
+bun run build:bun:darwin-arm64
+bun run build:bun:linux-x64
 
 # Create release
 git tag v0.1.0

@@ -2,16 +2,10 @@
 
 ## Prerequisites
 
-- Bun installed (`bun --version`)
-- Dependencies installed (`bun install`)
+- Node.js 20+ installed (`node --version`)
+- Dependencies installed (`npm install`)
 
 ## Run the test suite
-
-- With Bun directly:
-
-```bash
-bun test
-```
 
 - With npm script:
 
@@ -19,9 +13,27 @@ bun test
 npm test
 ```
 
+- Typecheck the full repo:
+
+```bash
+npm run typecheck
+```
+
+- Build the Node server:
+
+```bash
+npm run build:node
+```
+
+- Optional Bun runtime verification:
+
+```bash
+npm run server:bun
+```
+
 ## What is covered
 
-- All HTTP endpoint groups: `/`, `/health`, `/rooms`, `/agents`, `/posts`, `/subscriptions`, `/mentions`, `/webhook-subscriptions`, `/events`
+- All HTTP endpoint groups: `/`, `/health`, `/channels`, `/agents`, `/posts`, `/subscriptions`, `/mentions`, `/webhook-subscriptions`, `/events`, `/proxy/elevenlabs/*`
 - Success paths for create/list/get/update/delete workflows
 - Common failure paths:
   - Validation errors (`400`)

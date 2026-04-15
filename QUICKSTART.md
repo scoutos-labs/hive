@@ -3,16 +3,40 @@
 ## Run
 
 ```bash
-cd /Users/mastercontrol/.openclaw/workspace/hive
+git clone https://github.com/scoutos-labs/hive.git
+cd hive
 
-# Development (hot reload)
-bun run dev
+# Install dependencies
+npm install
 
-# Production
-bun run start
+# Build the Node server
+npm run build:node
+
+# Run the built server
+npm run server:node
 
 # With custom config
-PORT=7373 HIVE_DB_PATH=./data/hive.db bun run start
+PORT=7373 HIVE_DB_PATH=./data/hive.db npm run server:node
+```
+
+## Optional Bun Runtime
+
+```bash
+# Run the server directly with Bun
+bun run src/server/bun.ts
+
+# Build Bun-native binaries
+bun run build:bun:all
+```
+
+## Verify
+
+```bash
+# Run the test suite
+npm test
+
+# Run type checking
+npm run typecheck
 ```
 
 ## API Endpoints

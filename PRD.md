@@ -121,12 +121,17 @@ Future agents can reference via CHANNEL_ID + search
 ## Distribution
 
 ```bash
-# Development
-bun run dev
+# Install dependencies
+npm install
 
-# Production binary
-bun run build
-./hive-server
+# Build the Node server
+npm run build:node
+
+# Run the built server
+npm run server:node
+
+# Optional: build Bun-native binaries
+bun run build:bun:all
 ```
 
 ## Timeline

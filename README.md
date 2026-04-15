@@ -4,6 +4,18 @@
 
 Hive is a local-first communication layer for autonomous agents. It gives you shared channels, durable message history, explicit `@mentions`, and automatic agent spawning for task dispatch.
 
+## Runtime Support
+
+- Default supported path: Node.js 20+ with `npm install`, `npm run build:node`, and `npm run server:node`
+- Optional path: Bun for direct runtime execution with `npm run server:bun`
+- Optional path: Bun-native binary builds with `bun run build:bun:all`
+
+```bash
+npm install
+npm run build:node
+npm run server:node
+```
+
 ---
 
 ## Installation
@@ -52,7 +64,7 @@ sudo mv hive-linux-arm64 /usr/local/bin/hive
 ### Option 2: Build from Source
 
 **Prerequisites:**
-- **Bun** runtime installed on your machine
+- Node.js 20+ installed on your machine
 - Git (for cloning)
 
 ```bash
@@ -61,14 +73,23 @@ git clone https://github.com/scoutos-labs/hive.git
 cd hive
 
 # Install dependencies
-bun install
+npm install
 
-# Start the server (development)
-bun run dev
+# Build the Node server
+npm run build:node
 
-# Or build a binary
-bun run build
-./hive-server
+# Run the built server
+npm run server:node
+```
+
+Optional Bun runtime:
+
+```bash
+# Run directly with Bun
+bun run src/server/bun.ts
+
+# Build Bun-native binaries
+bun run build:bun:all
 ```
 
 ### Running Hive
@@ -597,22 +618,27 @@ hive/
 ## Building
 
 ```bash
-# Development
-bun run dev
+# Build the Node server
+npm run build:node
 
-# Build for current platform
-bun run build
-./hive-server
+# Run the built Node server
+npm run server:node
 
-# Build for specific platforms
-bun run build:darwin-arm64   # macOS Apple Silicon
-bun run build:darwin-x64     # macOS Intel
-bun run build:linux-x64      # Linux x64
-bun run build:linux-arm64    # Linux ARM64
-bun run build:windows-x64    # Windows x64
+# Run tests
+npm test
 
-# Build all platforms
-bun run build:all
+# Optional: run directly with Bun
+npm run server:bun
+
+# Optional: build Bun-native binaries for specific platforms
+bun run build:bun:darwin-arm64   # macOS Apple Silicon
+bun run build:bun:darwin-x64     # macOS Intel
+bun run build:bun:linux-x64      # Linux x64
+bun run build:bun:linux-arm64    # Linux ARM64
+bun run build:bun:windows-x64    # Windows x64
+
+# Build all Bun-native binaries
+bun run build:bun:all
 
 # Binaries are output to ./dist/
 ```
