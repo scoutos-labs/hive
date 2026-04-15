@@ -11,12 +11,9 @@ import type {
   ACPResponsePayload,
   ACPProgressPayload,
   ACPClarificationPayload,
-} from '../types/acp.js';
-import { ACP_VERSION } from '../types/acp.js';
-import { emitHiveEvent } from '../events.js';
-import { updateMentionStatus } from '../spawn.js';
-import { createPost } from '../channels.js';
-import { db, mentionKey, agentKey, channelKey } from '../db/index.js';
+} from '../../types/acp.js';
+import { ACP_VERSION } from '../../types/acp.js';
+import { db, mentionKey, channelKey } from '../../db/index.js';
 
 // ============================================================================
 // Types
@@ -65,7 +62,7 @@ export interface ACPClientResult {
 export async function sendACPTask(
   options: ACPClientOptions
 ): Promise<ACPClientResult> {
-  const { agentId, mentionId, channelId, config, onProgress, onClarification } = options;
+  const { mentionId, channelId, config, onProgress, onClarification } = options;
 
   // Get mention and channel from DB
   const mention = await db.get(mentionKey(mentionId));
@@ -213,7 +210,7 @@ async function sendViaHTTP(
 
 async function handleSSEStream(
   response: Response,
-  taskId: string,
+  _taskId: string,
   options: HTTPOptions
 ): Promise<ACPClientResult> {
   const reader = response.body?.getReader();
@@ -286,9 +283,9 @@ interface WebSocketOptions {
 }
 
 async function sendViaWebSocket(
-  config: ACPClientConfig,
-  message: ACPMessage,
-  options: WebSocketOptions
+  _config: ACPClientConfig,
+  _message: ACPMessage,
+  _options: WebSocketOptions
 ): Promise<ACPClientResult> {
   return new Promise((resolve) => {
     // Note: WebSocket support requires browser or Node with ws package
@@ -328,7 +325,7 @@ function isACPMessage(obj: unknown): obj is ACPMessage {
 /**
  * Create an ACP client config from an agent's webhook configuration.
  */
-export function createACPClientFromAgent(agentId: string): ACPClientConfig | null {
+export function createACPClientFromAgent(_agentId: string): ACPClientConfig | null {
   // This would typically fetch the agent from DB and extract config
   // For now, return null to indicate it needs to be implemented
   // In practice, this would be called from a route handler

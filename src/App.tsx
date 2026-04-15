@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, type ChangeEvent, type KeyboardEvent } from 'react';
 import { useChannels, useAgents, useChannel, useSSE, useMentions } from './hooks/data';
 import { api, type Post } from './api/hive';
 import { initNotifications, notifyAgentComplete, notifyAgentFailed } from './notifications';
@@ -364,7 +364,7 @@ function Composer({ channelId, onSend }: { channelId: string; onSend: () => void
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -374,7 +374,7 @@ function Composer({ channelId, onSend }: { channelId: string; onSend: () => void
     }
   };
 
-  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleInput = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     setContent(value);
 

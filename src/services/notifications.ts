@@ -3,7 +3,7 @@
  * Handles notifying agents of events via webhooks
  */
 
-import type { Agent, Post, Mention, Subscription } from '../types.js';
+import type { Post, Mention, Subscription } from '../types.js';
 import { db, agentKey, subsByTargetKey, getList, subKey } from '../db/index.js';
 
 export interface NotificationPayload {

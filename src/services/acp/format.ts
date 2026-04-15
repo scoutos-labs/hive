@@ -6,15 +6,11 @@
  */
 
 import type {
-  ACP_VERSION,
   ACPMessage,
-  ACPProgressMessage,
   ACPResponseMessage,
-  ACPErrorMessage,
-  ACPClarificationMessage,
+  ACPClarificationResponseMessage,
   ACPProgressPayload,
   ACPResponsePayload,
-  ACPArtifact,
   ACPQuestion,
 } from '../../types/acp.js';
 
@@ -112,21 +108,21 @@ export function parseACPLine(line: string, taskId: string): ParsedACPLine {
 
     // Check if it's a full ACP message
     if (isACPMessageStructure(parsed)) {
+      if (parsed.type === 'task') {
+        return { valid: false, type: 'raw', raw: trimmed };
+      }
+
       return {
         valid: true,
         type: parsed.type,
-        message: parsed as ACPMessage,
+        message: parsed,
       };
     }
 
     // Check if it's an ACP event (type + payload structure)
     if (isACPEventStructure(parsed)) {
       const message = acpEventToMessage(parsed, taskId);
-      return {
-        valid: true,
-        type: parsed.type as ParsedACPLine['type'],
-        message,
-      };
+      return { valid: true, type: parsed.type, message };
     }
 
     // Check for OpenClaw-style text event
@@ -309,7 +305,7 @@ export function createACPClarificationResponse(
   taskId: string,
   answers: Record<string, string | string[]>
 ): string {
-  const message: ACPMessage = {
+  const message: ACPClarificationResponseMessage = {
     protocol: ACP_VER,
     type: 'response', // Using 'response' as clarification response
     taskId,
@@ -327,7 +323,7 @@ export function createACPClarificationResponse(
 // Helpers
 // ============================================================================
 
-function isACPMessageStructure(obj: unknown): obj is { protocol: string; type: string; taskId: string } {
+function isACPMessageStructure(obj: unknown): obj is ACPMessage {
   return (
     typeof obj === 'object' &&
     obj !== null &&
@@ -339,12 +335,12 @@ function isACPMessageStructure(obj: unknown): obj is { protocol: string; type: s
   );
 }
 
-function isACPEventStructure(obj: unknown): obj is { type: string } {
+function isACPEventStructure(obj: unknown): obj is ACPEvent {
   return (
     typeof obj === 'object' &&
     obj !== null &&
     'type' in obj &&
-    typeof (obj as { type: unknown }).type === 'string'
+    ['progress', 'response', 'clarification', 'error'].includes((obj as { type: unknown }).type as string)
   );
 }
 
@@ -367,10 +363,13 @@ function acpEventToMessage(event: ACPEvent, taskId: string): ACPMessage {
 
   switch (event.type) {
     case 'progress':
+      return { ...base, type: event.type, payload: event.payload };
     case 'response':
+      return { ...base, type: event.type, payload: event.payload };
     case 'clarification':
+      return { ...base, type: event.type, payload: event.payload };
     case 'error':
-      return { ...base, type: event.type, payload: 'payload' in event ? event.payload : {} };
+      return { ...base, type: event.type, payload: event.payload };
     default:
       // OpenClaw text event
       return {

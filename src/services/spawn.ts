@@ -115,7 +115,7 @@ async function createSubscription(input: {
   await addToSet(subsByTargetKey(input.targetType, input.targetId), subId);
 }
 
-async function createSpawnErrorPost(params: {
+export async function createSpawnErrorPost(params: {
   channelId: string;
   mentionId: string;
   agentId: string;

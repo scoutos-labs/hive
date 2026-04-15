@@ -5,13 +5,15 @@
  */
 
 import type {
-  ACP_VERSION,
   ACPMessage,
   ACPTaskMessage,
   ACPProgressMessage,
   ACPResponseMessage,
   ACPClarificationMessage,
-  ACPErrorMessage,
+  ACPProgressPayload,
+  ACPResponsePayload,
+  ACPClarificationPayload,
+  ACPTaskPayload,
 } from '../../types/acp.js';
 
 const ACP_VER = 'acp/1.0' as const;
@@ -77,7 +79,9 @@ export function parseACPMessage(json: string): ACPParseResult {
  */
 export function parseACPTaskMessage(json: string): ACPParseResult<ACPTaskMessage['payload']> {
   const result = parseACPMessage(json);
-  if (!result.success || !result.message) return result;
+  if (!result.success || !result.message) {
+    return { success: false, error: result.error };
+  }
 
   if (result.message.type !== 'task') {
     return {
@@ -97,7 +101,9 @@ export function parseACPTaskMessage(json: string): ACPParseResult<ACPTaskMessage
  */
 export function parseACPResponseMessage(json: string): ACPParseResult<ACPResponseMessage['payload']> {
   const result = parseACPMessage(json);
-  if (!result.success || !result.message) return result;
+  if (!result.success || !result.message) {
+    return { success: false, error: result.error };
+  }
 
   if (result.message.type !== 'response') {
     return {
@@ -117,7 +123,9 @@ export function parseACPResponseMessage(json: string): ACPParseResult<ACPRespons
  */
 export function parseACPProgressMessage(json: string): ACPParseResult<ACPProgressMessage['payload']> {
   const result = parseACPMessage(json);
-  if (!result.success || !result.message) return result;
+  if (!result.success || !result.message) {
+    return { success: false, error: result.error };
+  }
 
   if (result.message.type !== 'progress') {
     return {
@@ -137,7 +145,9 @@ export function parseACPProgressMessage(json: string): ACPParseResult<ACPProgres
  */
 export function parseACPClarificationMessage(json: string): ACPParseResult<ACPClarificationMessage['payload']> {
   const result = parseACPMessage(json);
-  if (!result.success || !result.message) return result;
+  if (!result.success || !result.message) {
+    return { success: false, error: result.error };
+  }
 
   if (result.message.type !== 'clarification') {
     return {
@@ -244,7 +254,9 @@ export function validateACPResponse(payload: unknown): ValidatedResponse {
 // Helpers
 // ============================================================================
 
-function isACPMessage(obj: unknown): obj is ACPMessage {
+function isACPMessage(obj: unknown): obj is ACPMessage<
+  ACPTaskPayload | ACPProgressPayload | ACPResponsePayload | ACPClarificationPayload
+> {
   return (
     typeof obj === 'object' &&
     obj !== null &&

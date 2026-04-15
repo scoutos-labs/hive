@@ -12,13 +12,10 @@
 import { spawn, ChildProcess } from 'child_process';
 import type { Agent, Mention, Channel, Post } from '../../types.js';
 import type {
-  ACPMessage,
-  ACPTaskPayload,
   ACPProgressPayload,
   ACPResponsePayload,
   ACPClarificationPayload,
 } from '../../types/acp.js';
-import { ACP_VERSION } from '../../types/acp.js';
 import {
   parseAgentOutput,
   formatAgentOutputForPost,
@@ -29,7 +26,6 @@ import { emitHiveEvent } from '../events.js';
 import { updateMentionStatus, createSpawnErrorPost } from '../spawn.js';
 import { getSpawnConfig } from '../spawn-config.js';
 import { checkCommandAllowed, validateSpawnArgs } from '../spawn-allowlist.js';
-import { db, agentKey, mentionKey } from '../../db/index.js';
 import { createPost } from '../channels.js';
 
 // ============================================================================
@@ -83,6 +79,8 @@ const activeSpawns = new Map<string, {
   agentId: string;
   clarificationResolve?: (answers: Record<string, string | string[]>) => void;
 }>();
+
+export type ActiveSpawn = ReturnType<typeof activeSpawns.get>;
 
 // ============================================================================
 // Check if agent supports ACP
@@ -213,17 +211,6 @@ export async function spawnAgentACP(
     return arg;
   });
 
-  // Build ACP task payload
-  const taskPayload: ACPTaskPayload = {
-    mentionId: mention.id,
-    channelId: channel.id,
-    channelName: channel.name,
-    cwd: spawnCwd,
-    fromAgent: mention.mentioningAgentId || 'unknown',
-    content: post.content,
-    chainDepth,
-  };
-
   return new Promise((resolve) => {
     let stdoutBuf = '';
     let stderrBuf = '';
@@ -352,14 +339,16 @@ export async function spawnAgentACP(
       log.info(`Agent ${agent.id} closed with exit code ${code}`);
       log.debug(`stdout length: ${stdoutBuf.length}, stderr length: ${stderrBuf.length}`);
 
-      // Parse final output
-      const parsedOutput = parseAgentOutput(stdoutBuf, mention.id);
+      const parsedOutput = formatAgentOutputForPost({
+        ...parseAgentOutput(stdoutBuf, mention.id),
+      });
+      const completedSuccessfully = code === 0 && finalResponse?.status !== 'failed' && !stderrBuf.trim();
 
       // Determine status
       let status: 'completed' | 'failed' | 'clarifying';
       if (clarification && !finalResponse) {
         status = 'clarifying';
-      } else if (success) {
+      } else if (completedSuccessfully) {
         status = 'completed';
       } else {
         status = 'failed';
@@ -369,16 +358,15 @@ export async function spawnAgentACP(
       await updateMentionStatus(
         mention.id,
         status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'running',
-        finalResponse?.message || parsedOutput.textContent,
+        finalResponse?.message || parsedOutput,
         stderrBuf || undefined
       );
 
       // Create response post if completed
-      if (status === 'completed' && (finalResponse?.message || parsedOutput.textContent)) {
-        const postContent = formatAgentOutputForPost(parsedOutput);
+      if (status === 'completed' && (finalResponse?.message || parsedOutput)) {
         await createPost(channel.id, {
           authorId: agent.id,
-          content: postContent || finalResponse?.message || 'Task completed',
+          content: parsedOutput || finalResponse?.message || 'Task completed',
         });
       }
 
@@ -401,7 +389,7 @@ export async function spawnAgentACP(
         success: status === 'completed',
         status,
         exitCode: code,
-        output: finalResponse?.message || parsedOutput.textContent,
+        output: finalResponse?.message || parsedOutput,
         error: stderrBuf || undefined,
         response: finalResponse,
         clarification,
@@ -464,7 +452,7 @@ export async function handleClarificationResponse(
 // Get Active Spawn
 // ============================================================================
 
-export function getActiveSpawn(mentionId: string): typeof activeSpawns.get(string) {
+export function getActiveSpawn(mentionId: string): ActiveSpawn {
   return activeSpawns.get(mentionId);
 }
 

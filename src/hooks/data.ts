@@ -104,13 +104,17 @@ export function useMentions(agentId?: string) {
   const [mentions, setMentions] = useState<Mention[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const applyMentions = (data: Mention[]) => {
+    setMentions(data.sort((a, b) => b.createdAt - a.createdAt));
+  };
+
   useEffect(() => {
     async function fetchMentions() {
       try {
         setLoading(true);
         const data = await api.getMentions(agentId);
         // Sort by creation time, most recent first
-        setMentions(data.sort((a, b) => b.createdAt - a.createdAt));
+        applyMentions(data);
       } catch (err) {
         console.error('Failed to fetch mentions:', err);
       } finally {
@@ -120,7 +124,13 @@ export function useMentions(agentId?: string) {
     fetchMentions();
   }, [agentId]);
 
-  return { mentions, loading, refetch: () => api.getMentions(agentId).then(setMentions) };
+  return {
+    mentions,
+    loading,
+    refetch: () => api.getMentions(agentId).then((data) => {
+      applyMentions(data);
+    }),
+  };
 }
 
 // SSE hook for real-time events
@@ -131,7 +141,7 @@ export function useSSE(url: string) {
   useEffect(() => {
     const source = new EventSource(url);
     const appendEvent = (event: HiveEvent) => {
-      setEvents(prev => [...prev.slice(-99), event]);
+      setEvents((prev: HiveEvent[]) => [...prev.slice(-99), event]);
     };
 
     const handleEvent = (e: MessageEvent<string>) => {
@@ -169,7 +179,7 @@ export function useChannel(channelId: string | null) {
   const { posts, loading: postsLoading, refetch: refetchPosts } = usePosts(channelId);
   const { channels, loading: channelsLoading } = useChannels();
 
-  const channel = channelId ? channels.find(c => c.id === channelId) : null;
+  const channel = channelId ? channels.find((channel: Channel) => channel.id === channelId) : null;
 
   return {
     channel,

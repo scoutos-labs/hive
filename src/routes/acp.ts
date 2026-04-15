@@ -13,10 +13,9 @@ import { emitHiveEvent } from '../services/events.js';
 import {
   parseACPResponseMessage,
   parseACPProgressMessage,
-  parseACPClarificationMessage,
   validateACPResponse,
 } from '../services/acp/parser.js';
-import { formatAgentOutputForPost, parseACPLine } from '../services/acp/format.js';
+import { formatAgentOutputForPost } from '../services/acp/format.js';
 import type { ApiResponse } from '../types.js';
 import type { ACPResponsePayload, ACPProgressPayload } from '../types/acp.js';
 

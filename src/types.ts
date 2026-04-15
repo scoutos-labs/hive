@@ -247,7 +247,7 @@ export interface ElevenLabsAudioAsset {
 // API Response Types
 // ============================================================================
 
-export interface ApiResponse<T> {
+export interface ApiResponse<T = never> {
   success: boolean;
   data?: T;
   error?: string;

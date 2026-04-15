@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from 'bun:test';
+import { afterAll, describe, expect, it } from 'vitest';
 import { createHash, createHmac } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';

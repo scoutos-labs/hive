@@ -8,10 +8,8 @@ import {
   subKey, 
   subsByAgentKey, 
   subsByTargetKey, 
-  generateId, 
   addToSet, 
   getList,
-  removeFromSet,
 } from '../db/index.js';
 import { getValidatedBody, getValidatedQuery, validateBody, validateQuery } from '../middleware/validate.js';
 import { createSubscriptionSchema, listSubscriptionsQuerySchema, type CreateSubscriptionInput, type ListSubscriptionsQueryInput } from '../schemas/subscriptions.js';

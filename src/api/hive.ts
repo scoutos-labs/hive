@@ -8,6 +8,12 @@ interface ApiResponse<T> {
   error?: string;
 }
 
+interface PaginatedResponse<T> extends ApiResponse<T[]> {
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 interface Channel {
   id: string;
   name: string;
@@ -96,8 +102,18 @@ export const api = {
   // Agents
   async getAgents(): Promise<Agent[]> {
     const res = await fetch(`${API_BASE}/agents`);
-    const json = await res.json();
-    return json.agents || [];
+    const json = await res.json() as { agents?: Agent[] } | PaginatedResponse<Agent>;
+
+    if ('agents' in json) {
+      return json.agents || [];
+    }
+
+    const paginated = json as PaginatedResponse<Agent>;
+    if (!paginated.success) {
+      throw new Error(paginated.error || 'Failed to fetch agents');
+    }
+
+    return paginated.data || [];
   },
 
   // Mentions

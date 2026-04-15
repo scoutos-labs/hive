@@ -10,7 +10,6 @@ import type {
   ACPWebhookPayload,
   ACPWebhookResponse,
   ACPTaskPayload,
-  ACPMessage,
 } from '../../types/acp.js';
 import { ACP_VERSION } from '../../types/acp.js';
 

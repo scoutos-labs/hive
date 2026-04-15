@@ -6,6 +6,7 @@ import {
   addToSet,
   getList,
 } from '../db/index.js';
+import { deliverWebhookEvent } from './webhook-subscriptions.js';
 import type { HiveEvent, HiveEventType } from '../types.js';
 
 type EventListener = (event: HiveEvent) => void;
@@ -42,6 +43,10 @@ export async function emitHiveEvent<TPayload extends Record<string, unknown>>(
       console.error('[events] listener error', error);
     }
   }
+
+  void deliverWebhookEvent(event).catch((error) => {
+    console.error('[events] webhook delivery error', error);
+  });
 
   return event;
 }

@@ -6,9 +6,9 @@
  * Addresses GitHub Issue #2.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { rm, mkdir, readFile, access } from 'node:fs/promises';
+import { rm, mkdir, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 

@@ -127,7 +127,7 @@ async function notifyViaWebhook(
 ): Promise<void> {
   if (!agent.webhook) return;
 
-  const { url, secret, headers = {}, timeout = 30000 } = agent.webhook;
+  const { secret, headers = {}, timeout = 30000 } = agent.webhook;
   const webhookUrl = agent.webhook.url;
 
   const payload = {
