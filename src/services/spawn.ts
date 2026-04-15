@@ -148,13 +148,17 @@ type SpawnTextEvent = {
   type: 'text';
   content?: unknown;
   text?: unknown;
+  part?: {
+    type?: unknown;
+    text?: unknown;
+  };
 };
 
 function isSpawnTextEvent(event: unknown): event is SpawnTextEvent {
   return !!event && typeof event === 'object' && (event as { type?: unknown }).type === 'text';
 }
 
-function formatSpawnOutputForPost(stdout: string): string {
+export function formatSpawnOutputForPost(stdout: string): string {
   const trimmed = stdout.trim();
   if (!trimmed) return '';
 
@@ -179,6 +183,8 @@ function formatSpawnOutputForPost(stdout: string): string {
     .map(event => {
       if (typeof event.content === 'string') return event.content;
       if (typeof event.text === 'string') return event.text;
+      // OpenCode emits final answer text inside `part.text` on text events.
+      if (event.part?.type === 'text' && typeof event.part.text === 'string') return event.part.text;
       return JSON.stringify(event);
     })
     .join('\n\n');
