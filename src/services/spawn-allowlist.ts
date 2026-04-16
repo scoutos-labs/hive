@@ -19,6 +19,8 @@
  *     harmless when shell=false but are logged as a warning for auditability.
  */
 
+import { getExecutableName } from './spawn-command.js';
+
 export interface AllowlistCheckResult {
   allowed: boolean;
   reason?: string;
@@ -57,7 +59,7 @@ function parseAllowlist(): Set<string> | null {
 
 /** Extract just the executable name from a path, e.g. "/usr/bin/node" → "node". */
 function executableName(command: string): string {
-  const parts = command.split('/');
+  const parts = getExecutableName(command).split('/');
   return parts[parts.length - 1] ?? command;
 }
 

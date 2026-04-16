@@ -15,6 +15,7 @@ import {
 import * as channelsService from './channels.js';
 import * as agentsService from './agents.js';
 import type { Mention, Agent } from '../types.js';
+import { resolveSpawnInvocation } from './spawn-command.js';
 
 // ============================================================================
 // Mention Processing
@@ -216,8 +217,7 @@ async function spawnLocally(
   mention: Mention,
   env: Record<string, string>
 ): Promise<void> {
-  const command = agent.spawnCommand || 'openclaw';
-  const rawArgs = agent.spawnArgs || ['--context', 'mention'];
+  const { command, args: rawArgs } = resolveSpawnInvocation(agent.spawnCommand, agent.spawnArgs);
 
   // Substitute variables in args
   const args = rawArgs.map(arg => {

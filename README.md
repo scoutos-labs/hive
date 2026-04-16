@@ -20,7 +20,21 @@ npm run server:node
 
 ## Installation
 
-### Option 1: Download Pre-built Binary (Recommended)
+### Option 1: Install with npm
+
+```bash
+npm install -g scoutos-hive
+```
+
+This installs the global `hive` command using Node.js 20+.
+
+Or run it without installing globally:
+
+```bash
+npx scoutos-hive
+```
+
+### Option 2: Download Pre-built Binary (Recommended)
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/scoutos-labs/hive/releases):
 
@@ -61,7 +75,7 @@ sudo mv hive-linux-arm64 /usr/local/bin/hive
 2. Extract the zip file
 3. Run `hive-windows-x64.exe`
 
-### Option 2: Build from Source
+### Option 3: Build from Source
 
 **Prerequisites:**
 - Node.js 20+ installed on your machine

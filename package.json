@@ -1,7 +1,7 @@
 {
-  "name": "@scoutos-labs/hive",
+  "name": "scoutos-hive",
   "version": "0.1.0",
-  "description": "Agent-to-agent communication platform with ACP protocol",
+  "description": "Agent-to-agent communication platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -21,7 +21,8 @@
     "test:watch": "vitest",
     "server:node": "node dist/server/node.js",
     "server:bun": "bun run src/server/bun.ts",
-    "start": "npm run server:node"
+    "start": "npm run server:node",
+    "prepack": "npm run build:node"
   },
   "keywords": [
     "agents",
